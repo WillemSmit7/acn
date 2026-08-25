@@ -1,13 +1,32 @@
 rules_version = '2';
 
-// ACN Increment 1.
+// ACN Increments 1-3.
 //
-// All writes are performed by backend services using the Admin SDK, which
-// bypasses these rules. No client application exists yet, so every direct
-// client access is denied. This is tightened/opened deliberately in the
-// increment that introduces the Angular UI and Firebase Auth.
+// Every write comes from a backend service using the Admin SDK, which bypasses
+// these rules entirely. Client writes are therefore denied outright: nothing in
+// the browser has any business changing observed network state, and the NOC UI
+// is strictly a viewer.
+//
+// Reads are open because the Increment 3 dashboard is a local, read-only view
+// against the Firestore EMULATOR, which holds nothing but synthetic lab data
+// and is reachable only from this machine. There is no Firebase Auth yet.
+//
+// THIS RULESET MUST NOT BE DEPLOYED TO A REAL PROJECT AS IT STANDS. Increment 7
+// introduces Firebase Auth and replaces `allow read: if true` with per-user
+// authorisation; until then these rules assume the emulator's isolation is the
+// security boundary. See docs/architecture.md.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Collections the read-only NOC dashboard renders.
+    match /devices/{document=**}       { allow read: if true; allow write: if false; }
+    match /healthChecks/{document=**}  { allow read: if true; allow write: if false; }
+    match /networkLogs/{document=**}   { allow read: if true; allow write: if false; }
+    match /networkEvents/{document=**} { allow read: if true; allow write: if false; }
+    match /incidents/{document=**}     { allow read: if true; allow write: if false; }
+
+    // Anything not named above stays closed, including the collections later
+    // increments add (agentRuns, agentActions, networkChanges).
     match /{document=**} {
       allow read, write: if false;
     }
