@@ -5,7 +5,9 @@
   "description": "AI-Centered Network (ACN) - operational network data collection, normalization and (later) AI-assisted remediation.",
   "workspaces": [
     "services/health-service",
-    "services/layer-zero"
+    "services/layer-zero",
+    "services/incident-service",
+    "apps/web"
   ],
   "scripts": {
     "lab:deploy": "./lab/deploy.sh",
@@ -17,7 +19,9 @@
     "health-service": "npm run dev --workspace services/health-service",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "layer-zero": "npm run dev --workspace services/layer-zero"
+    "layer-zero": "npm run dev --workspace services/layer-zero",
+    "incident-service": "npm run dev --workspace services/incident-service",
+    "web": "npm start --workspace web"
   },
   "engines": {
     "node": ">=20"
