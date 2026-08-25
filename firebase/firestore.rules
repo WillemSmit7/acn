@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// ACN Increment 1.
+//
+// All writes are performed by backend services using the Admin SDK, which
+// bypasses these rules. No client application exists yet, so every direct
+// client access is denied. This is tightened/opened deliberately in the
+// increment that introduces the Angular UI and Firebase Auth.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
