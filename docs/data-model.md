@@ -1,15 +1,15 @@
 # ACN Firestore Data Model
 
 The database separates raw observations, normalized events, incidents, and AI
-activity. Increment 1 implements only the first three collections; the rest are
+activity. Increments 1 and 2 implement the first four collections; the rest are
 documented here so the shape is stable when their increment arrives.
 
 | Collection       | Status        | Written by       |
 |------------------|---------------|------------------|
 | `devices`        | Increment 1   | Health Service   |
 | `healthChecks`   | Increment 1   | Health Service   |
-| `networkEvents`  | Increment 1   | Health Service, later Layer 0 |
-| `networkLogs`    | Increment 2   | Log Collector    |
+| `networkEvents`  | Increment 1-2 | Health Service, Layer 0 |
+| `networkLogs`    | Increment 2   | Layer 0          |
 | `incidents`      | Increment 3   | Incident Service |
 | `agentRuns`      | Increment 4   | Agent Service    |
 | `agentActions`   | Increment 5   | Agent Service    |
@@ -58,52 +58,102 @@ time, or `null` when nothing replied. `error` is `null` on success. This is a
 high-volume append-only collection — Increment 10 revisits its storage if
 volume demands it.
 
-## `networkEvents/` — implemented (device transitions only)
+## `networkLogs/` — implemented
 
-Normalized events. Increment 1 emits only the two device-level transitions;
-Layer 0 adds log-derived types such as `interface_down` in Increment 2.
-
-```json
-{
-  "deviceId": "r3",
-  "eventType": "device_unreachable",
-  "severity": "critical",
-  "attributes": { "previousStatus": "healthy", "checkType": "icmp" },
-  "source": "health-service",
-  "occurredAt": "<server timestamp>"
-}
-```
-
-| `eventType`           | `severity` | Emitted when            |
-|-----------------------|------------|-------------------------|
-| `device_unreachable`  | `critical` | healthy -> down         |
-| `device_recovered`    | `info`     | down -> healthy         |
-
-Events are emitted only on a **change**. A device that is down on the very
-first observation seeds a baseline and produces no event, so restarting the
-service never spams phantom events. `attributes` is deliberately open so
-Layer 0 can extend it without a schema migration.
-
-`source` records which component produced the event — from Increment 2 this
-distinguishes Health Service transitions from Layer 0 normalizations.
-
-Increment 2 adds `sourceLogId`, linking a normalized event back to the raw
-`networkLogs` document it came from, so the original text is always traceable.
-
----
-
-## Planned collections
-
-### `networkLogs/` — Increment 2
+Every log line collected from a device, stored verbatim. Auto-generated
+document id. Written by Layer 0.
 
 ```json
 {
   "deviceId": "r2",
-  "source": "syslog",
-  "raw": "%LINK-3-UPDOWN: Interface eth2 changed state to down",
+  "source": "frr",
+  "raw": "2026/08/25 19:37:27 OSPF: [Y05P2-YJVXY] AdjChg: Nbr 10.255.0.3, NbrIP 10.0.23.2 (default) on eth2:10.0.23.1: Full -> Deleted (KillNbr)",
+  "daemon": "OSPF",
+  "code": "Y05P2-YJVXY",
+  "errorCode": null,
+  "message": "AdjChg: Nbr 10.255.0.3, ... Full -> Deleted (KillNbr)",
+  "parsed": true,
+  "normalized": true,
+  "loggedAt": "<device timestamp>",
   "receivedAt": "<server timestamp>"
 }
 ```
+
+`raw` is the untouched original and is always present. The structured fields
+(`daemon`, `code`, `errorCode`, `message`, `loggedAt`) are null when the line
+did not match FRR's structured format — FRR emits unstructured startup noise
+such as `[33|zebra] sending configuration`. Storing those anyway keeps parser
+gaps visible and recoverable instead of silently discarding what the device
+actually said.
+
+`parsed` records whether the envelope was understood; `normalized` whether a
+rule turned it into an event. The two differ: most parsed lines are routine
+bookkeeping that produces no event.
+
+`loggedAt` is the device's own timestamp, `receivedAt` is when the collector
+wrote it. Both are kept because they answer different questions — when it
+happened, and when we found out.
+
+This is an append-only high-volume collection, like `healthChecks/`;
+Increment 10 revisits retention.
+
+## `networkEvents/` — implemented
+
+Normalized events, written by two producers. The Health Service emits
+device-level transitions from ICMP; Layer 0 emits log-derived types. Both land
+here so Increment 3 can correlate across them, and `source` tells them apart.
+
+```json
+{
+  "deviceId": "r2",
+  "eventType": "ospf_neighbor_down",
+  "severity": "warning",
+  "attributes": {
+    "neighborId": "10.255.0.3",
+    "neighborIp": "10.0.23.2",
+    "interface": "eth2",
+    "localIp": "10.0.23.1",
+    "vrf": "default",
+    "fromState": "Full",
+    "toState": "Deleted",
+    "reason": "KillNbr"
+  },
+  "source": "layer-zero",
+  "sourceLogId": "<networkLogs document id>",
+  "occurredAt": "<device timestamp>",
+  "recordedAt": "<server timestamp>"
+}
+```
+
+| `eventType`           | `severity` | `source`         | Emitted when                    |
+|-----------------------|------------|------------------|---------------------------------|
+| `device_unreachable`  | `critical` | `health-service` | healthy -> down (ICMP)          |
+| `device_recovered`    | `info`     | `health-service` | down -> healthy (ICMP)          |
+| `interface_down`      | `warning`  | `layer-zero`     | zebra reports an interface down |
+| `interface_up`        | `info`     | `layer-zero`     | zebra reports an interface up   |
+| `ospf_neighbor_down`  | `warning`  | `layer-zero`     | OSPF adjacency leaves Full      |
+| `ospf_neighbor_up`    | `info`     | `layer-zero`     | OSPF adjacency reaches Full     |
+
+`sourceLogId` links a normalized event back to the exact `networkLogs`
+document it was derived from, so the original text behind any event is one
+lookup away. Health Service events set it to `null` — an ICMP probe has no
+originating log line — rather than omitting it, so every document has the same
+shape and consumers never special-case its absence.
+
+The raw log and the event derived from it are written in the same batch, with
+the log's id generated locally beforehand. `networkEvents` therefore never
+contains an event pointing at a `networkLogs` document that does not exist.
+
+Health Service events are emitted only on a **change**. A device that is down
+on the very first observation seeds a baseline and produces no event, so
+restarting the service never spams phantom events. Layer 0 events are
+inherently edge-triggered: the device only logs a transition when one happens.
+
+`attributes` is deliberately open, and its contents are event-type specific.
+
+---
+
+## Planned collections
 
 ### `incidents/` — Increment 3
 
@@ -158,8 +208,8 @@ and was it later rolled back.
 ## Indexes
 
 `firebase/firestore.indexes.json` defines composite indexes for the queries
-later increments need: health checks by device over time, and events by device
-or by type over time.
+later increments need: health checks by device over time, events by device, by
+type or by producer over time, and raw logs by device over time.
 
 ## Security rules
 

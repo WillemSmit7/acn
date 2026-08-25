@@ -9,18 +9,25 @@ holds the durable context and the traps that cost real time.
 
 ---
 
-## Current state: Increment 1 COMPLETE, 15/15 criteria verified
+## Current state: Increments 1 and 2 complete
 
-`./scripts/e2e-test.sh` passes end to end against the real lab: healthy baseline
-→ R2–R3 broken → `DEVICE_UNREACHABLE` for r3 and pc2 → restored →
-`DEVICE_RECOVERED` → all eight Firestore assertions pass. r1, r2 and pc1 stayed
-healthy throughout, so the blast radius is correct.
+Both end-to-end tests pass against the real lab:
+
+```bash
+./scripts/e2e-test.sh         # Increment 1 - ICMP -> Firestore, 8 assertions
+./scripts/e2e-layer-zero.sh   # Increment 2 - FRR logs -> events, 16 assertions
+```
+
+Increment 1: ICMP health checks, `device_unreachable` / `device_recovered`.
+Increment 2: Layer 0 tails FRR logs, stores raw lines in `networkLogs/`, and
+normalizes four event types into `networkEvents/` with a `sourceLogId`
+back-reference. A single R2-R3 link failure is observed from both ends.
 
 ### The next action
 
-Increment 2 — syslog ingestion and Layer 0 normalization. See PROGRESS.md.
+Increment 3 — incident detection and correlation. See PROGRESS.md.
 
-Before trusting any of it, verify what is actually running:
+Verify what is actually running before assuming anything:
 
 ```bash
 for ip in 10.255.0.1 10.255.0.2 10.255.0.3 10.0.1.2 10.0.3.2; do
@@ -74,6 +81,30 @@ first and skip honestly. See `tests/ping.test.ts`.
 **The lab may already be up.** Check before deploying; `deploy.sh --reconfigure`
 rebuilds it needlessly.
 
+**FRR logging fails silently, in four separate ways.** All of these leave the
+daemon up and the config reading back correctly, with no events on disk:
+
+- `docker logs` is useless — FRR daemonizes and stops writing to container
+  stdout after startup.
+- ospfd and staticd **reject a runtime `log file`** for any path, including
+  world-writable ones; zebra and mgmtd accept it. Log destinations are therefore
+  `--log file:` startup flags in `lab/configs/daemons`, one file per daemon.
+- ospfd cannot write to `/var/run/frr` — zebra opens its log while still root,
+  ospfd opens its own after dropping to `frr`. Hence the `lab/logs/<router>` ->
+  `/var/log/frr` bind mount, created mode 777 by `deploy.sh`.
+- Those files land root-owned mode 600 on the host, so host-side reads need
+  root. Layer 0 goes through `docker exec … tail -F`.
+
+Interface events need `debug zebra events`; adjacency events need
+`log-adjacency-changes detail`. Measured cost: **zero** lines in 30s of steady
+state — the volume is entirely burst-driven by topology changes.
+
+**Killing a service by pid orphans it.** `npm run …` / `npx tsx` spawn a
+grandchild that survives a kill on the wrapper and keeps writing to Firestore,
+silently polluting later runs. Both e2e scripts now use `setsid` and signal the
+process group. If assertions show events nobody started, check for strays:
+`ps -eo pid,args | grep tsx`.
+
 ---
 
 ## Design decisions — do not undo
@@ -104,6 +135,25 @@ into the loop.
 **Latency precision scales to magnitude.** Container RTT is ~0.04ms; `toFixed(1)`
 renders every healthy check as a misleading `0.0ms`.
 
+**Layer 0 stores the raw line even when it cannot parse it.** A parser gap must
+stay visible and recoverable; silently dropping what a device actually said is
+how monitoring comes to quietly lie. `parsed` and `normalized` flags record how
+far each line got.
+
+**Normalization is separate from parsing.** `parser.ts` splits FRR's envelope
+without assigning meaning; `rules.ts` decides what a message is. Returning no
+event is the common case — the intermediate OSPF states (`Init`, `ExStart`,
+`Exchange`, `Loading`) are dropped deliberately, since one recovery walks
+through all four and an event per step would bury the transition that matters.
+
+**The raw log and its event are written in one batch**, with the log's id
+generated locally first. So `networkEvents` never points at a `networkLogs`
+document that does not exist, and `sourceLogId` costs no extra round trip.
+
+**Layer 0 does not decide what is an incident.** It emits events and stops.
+Correlation is Increment 3; putting that inference in the normalizer would make
+it impossible to change later without re-parsing history.
+
 ---
 
 ## Layout & commands
@@ -111,20 +161,23 @@ renders every healthy check as a misleading `0.0ms`.
 ```
 lab/        topology.clab.yml, FRR configs, scenarios, lib/docker.sh
 services/health-service/   Increment 1 — ICMP -> Firestore
+services/layer-zero/       Increment 2 — FRR logs -> networkLogs + networkEvents
 firebase/   rules + indexes      scripts/  e2e test, assertions, reset
 docs/       architecture.md, data-model.md, incident-model.md
 ```
 
 ```bash
-npm test                  # 18 unit tests
+npm test                  # 43 unit tests across both services
 npm run build             # tsc
 npm run emulators         # Firestore :8080, UI :4000
-npm run health-service    # the service
+npm run health-service    # Increment 1 service
+npm run layer-zero        # Increment 2 service
 ./lab/deploy.sh           # deploy + host routes (sudo only if routes missing)
 ./lab/verify.sh           # connectivity proof
 ./lab/scenarios/01-link-failure.sh    # break R2 eth2
 ./lab/scenarios/03-restore-network.sh # restore
 ./scripts/reset-firestore.sh          # wipe emulator
+./scripts/e2e-layer-zero.sh           # Increment 2 end-to-end
 ./lab/destroy.sh          # tear down + remove routes
 ```
 
@@ -142,5 +195,7 @@ Topology: `PC1—R1—R2—R3—PC2`, FRR 10.2.1, OSPF area 0. Interface naming 
   `WillemSmit7/acn` (private).
 - Never commit credentials. Emulator needs none; production uses ADC.
 - Do not build future increments' infrastructure early. Placeholder READMEs in
-  `services/layer-zero`, `incident-service`, `agent-service`,
-  `network-controller`, `apps/web` are intentional.
+  `services/incident-service`, `agent-service`, `network-controller`,
+  `apps/web` are intentional.
+- Parser fixtures must be lines copied verbatim from the running lab. Parsers
+  written against imagined log formats pass their tests and fail in production.

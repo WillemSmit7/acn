@@ -58,7 +58,7 @@ needed and none are stored in the repo.
 
 ## Running
 
-Three terminals.
+Four terminals.
 
 **Terminal 1 — the emulated network**
 
@@ -78,6 +78,15 @@ npm run emulators        # Firestore on 127.0.0.1:8080, UI on http://127.0.0.1:4
 ```bash
 npm run health-service
 ```
+
+**Terminal 4 — Layer 0** (Increment 2)
+
+```bash
+npm run layer-zero
+```
+
+Layer 0 tails each router's FRR logs, stores every line in `networkLogs/`, and
+writes normalized `networkEvents/` for interface and OSPF adjacency changes.
 
 ---
 
@@ -150,6 +159,18 @@ It clears the emulator, restores the lab, starts the service on a 5-second
 interval, breaks the link, restores it, then verifies that `healthChecks/`
 recorded both healthy and down results and that `r3` produced
 `device_unreachable` followed by `device_recovered`.
+
+For Increment 2, this runs the Health Service and Layer 0 together over the same
+cycle and asserts the log pipeline:
+
+```bash
+./scripts/e2e-layer-zero.sh
+```
+
+It checks that raw lines reached `networkLogs/`, that at least three event types
+were normalized, that every derived event resolves through its `sourceLogId`
+back to the exact line it came from, and that the R2-R3 failure was observed
+independently from both routers.
 
 ---
 
@@ -237,7 +258,7 @@ acn/
 ├── lab/                     containerlab topology, FRR configs, fault scenarios
 ├── services/
 │   ├── health-service/      Increment 1 — ICMP checks -> Firestore
-│   ├── layer-zero/          Increment 2 (placeholder)
+│   ├── layer-zero/          Increment 2 — FRR logs -> networkLogs + networkEvents
 │   ├── incident-service/    Increment 3 (placeholder)
 │   ├── agent-service/       Increment 4 (placeholder)
 │   └── network-controller/  Increment 5 (placeholder)

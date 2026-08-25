@@ -11,7 +11,7 @@ NETWORK
 HEALTH / DATA COLLECTION      <-- Increment 1 (built)
    |
    v
-LAYER 0  (normalization)      <-- Increment 2
+LAYER 0  (normalization)      <-- Increment 2 (built)
    |
    v
 INCIDENT DETECTION            <-- Increment 3
@@ -26,7 +26,7 @@ CONTROLLED NETWORK ACTIONS    <-- Increment 5, gated by risk policy in 6
 AUDIT + VERIFICATION
 ```
 
-## What exists today (Increment 1)
+## What exists today (Increments 1-2)
 
 ```
 +------------------------------------------------------------------+
@@ -39,23 +39,30 @@ AUDIT + VERIFICATION
 |  +------------+-------------+                                    |
 |               |                                                  |
 |               |  host routes: 10.255.0.0/24, 10.0.0.0/16 via r1  |
+|               |  FRR logs: lab/logs/<router> -> /var/log/frr     |
 |               v                                                  |
-|  +--------------------------+                                    |
-|  |      Health Service      |   Node.js + TypeScript             |
-|  |                          |                                    |
-|  |  - ICMP checks every 30s |                                    |
-|  |  - state transition      |                                    |
-|  |    detection             |                                    |
-|  +------------+-------------+                                    |
-|               |                                                  |
-|               v                                                  |
-|  +--------------------------+                                    |
-|  |  Firebase Emulator Suite |   devices/                         |
-|  |         Firestore        |   healthChecks/                    |
-|  |                          |   networkEvents/                   |
-|  +--------------------------+                                    |
+|  +--------------------------+  +----------------------------+    |
+|  |      Health Service      |  |          Layer 0           |    |
+|  |                          |  |                            |    |
+|  |  - ICMP checks every 30s |  |  - docker exec tail -F     |    |
+|  |  - state transition      |  |  - parse -> normalize      |    |
+|  |    detection             |  |  - raw line + event        |    |
+|  +------------+-------------+  +-------------+--------------+    |
+|               |                              |                   |
+|               |  ICMP transitions            |  log-derived      |
+|               v                              v                   |
+|  +--------------------------------------------------------+      |
+|  |         Firebase Emulator Suite - Firestore            |      |
+|  |                                                        |      |
+|  |  devices/  healthChecks/  networkLogs/  networkEvents/ |      |
+|  +--------------------------------------------------------+      |
 +------------------------------------------------------------------+
 ```
+
+Both services write into `networkEvents/`, distinguished by `source`. That is
+deliberate: Increment 3 correlates a device going unreachable (ICMP) with the
+interface and adjacency events the routers logged at the same moment, and it
+can only do that if both are in one stream on a common `deviceId`.
 
 ## Why the Health Service pings loopbacks, not management addresses
 
@@ -106,7 +113,42 @@ enforced structurally:
 - Overlapping rounds are skipped, never queued, so a slow network cannot
   cause unbounded concurrency.
 
+## Why Layer 0 reads log files through Docker
+
+The obvious designs do not work against real FRR, and each was tried:
+
+**`docker logs` goes silent.** FRR daemonizes. Once watchfrr forks the daemons,
+their output no longer reaches the container's stdout, so the container log
+contains startup chatter and nothing else. A link failure leaves no trace in it.
+
+**`log file` in `frr.conf` does not reach ospfd.** ospfd (and staticd) reject
+the runtime `log file` command for any path, including world-writable ones,
+while zebra and mgmtd accept it. Configured that way, OSPF adjacency changes
+never reach disk — and nothing reports an error, because ospfd stays up. The
+destinations are therefore set as `--log file:` startup flags in
+`lab/configs/daemons`, one file per daemon.
+
+**`/var/run/frr` is not writable by the daemons that matter.** zebra opens its
+log while still root; ospfd opens its own only after dropping to the `frr` user
+and then silently fails. Each router bind-mounts `lab/logs/<router>/` at
+`/var/log/frr`, created mode 777 by `deploy.sh`, so both daemons can write
+regardless of when they drop privileges.
+
+**The resulting files are root-owned mode 600 on the host**, so reading them
+host-side would need root. Collection goes back through `docker exec … tail -F`,
+which can read them.
+
+The lesson worth carrying forward is that every one of these failures was
+silent. The daemon stayed up, the config looked right, and the events simply
+were not there. Increment 2's log pipeline is verified against a real link
+failure for exactly that reason.
+
 ## Deferred deliberately
 
 No message bus, no Neo4j, no BigQuery, no Cloud Functions, no Angular app, no
 Claude integration. Each arrives in the increment that needs it.
+
+Layer 0 also has no incident concept: it emits events and stops there. Deciding
+that an `interface_down` on r2 and a `device_unreachable` for r3 and pc2 are one
+incident is Increment 3's job, and putting that inference in the normalizer
+would make it impossible to change later without re-parsing history.
