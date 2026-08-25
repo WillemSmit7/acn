@@ -58,7 +58,7 @@ needed and none are stored in the repo.
 
 ## Running
 
-Four terminals.
+Five terminals. Increments 1-3 plus the dashboard.
 
 **Terminal 1 — the emulated network**
 
@@ -87,6 +87,23 @@ npm run layer-zero
 
 Layer 0 tails each router's FRR logs, stores every line in `networkLogs/`, and
 writes normalized `networkEvents/` for interface and OSPF adjacency changes.
+
+**Terminal 5 — the Incident Service** (Increment 3)
+
+```bash
+npm run incident-service
+```
+
+Correlates the event stream into `incidents/` with a probable root cause.
+
+**The NOC dashboard** (read-only live view of all of the above)
+
+```bash
+npm run web              # http://localhost:4200
+```
+
+No real Firebase project is needed: the browser app talks to the Firestore
+emulator with the ordinary Firebase SDK, live `onSnapshot` listeners and all.
 
 ---
 
@@ -171,6 +188,20 @@ It checks that raw lines reached `networkLogs/`, that at least three event types
 were normalized, that every derived event resolves through its `sourceLogId`
 back to the exact line it came from, and that the R2-R3 failure was observed
 independently from both routers.
+
+For Increment 3, this runs the whole stack through **both** fault scenarios and
+asserts they are told apart:
+
+```bash
+./scripts/e2e-incidents.sh
+```
+
+Scenario 01 (link cut) and scenario 02 (router stopped) produce an identical set
+of `device_unreachable` events, so this is the honest test of whether
+correlation is doing anything ICMP alone could not. It asserts one is diagnosed
+`link_failure` and the other `device_failure`, that each root cause predicts the
+symptoms actually observed, and that every incident traces back through its
+events to raw log lines.
 
 ---
 
@@ -259,10 +290,10 @@ acn/
 ├── services/
 │   ├── health-service/      Increment 1 — ICMP checks -> Firestore
 │   ├── layer-zero/          Increment 2 — FRR logs -> networkLogs + networkEvents
-│   ├── incident-service/    Increment 3 (placeholder)
+│   ├── incident-service/    Increment 3 — networkEvents -> incidents
 │   ├── agent-service/       Increment 4 (placeholder)
 │   └── network-controller/  Increment 5 (placeholder)
-├── apps/web/                Increment 7 — Angular NOC UI (placeholder)
+├── apps/web/                Angular NOC dashboard — read-only live view
 ├── firebase/                Firestore rules and indexes
 ├── scripts/                 end-to-end test and helpers
 └── docs/                    architecture, data model, incident model
@@ -275,4 +306,4 @@ acn/
 - [PROGRESS.md](PROGRESS.md) — what is done, what is next
 - [docs/architecture.md](docs/architecture.md) — layering and key design decisions
 - [docs/data-model.md](docs/data-model.md) — Firestore collections
-- [docs/incident-model.md](docs/incident-model.md) — Increment 3 direction
+- [docs/incident-model.md](docs/incident-model.md) — correlation and root-cause rules

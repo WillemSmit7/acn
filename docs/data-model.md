@@ -1,7 +1,7 @@
 # ACN Firestore Data Model
 
 The database separates raw observations, normalized events, incidents, and AI
-activity. Increments 1 and 2 implement the first four collections; the rest are
+activity. Increments 1 to 3 implement the first five collections; the rest are
 documented here so the shape is stable when their increment arrives.
 
 | Collection       | Status        | Written by       |
@@ -151,22 +151,71 @@ inherently edge-triggered: the device only logs a transition when one happens.
 
 `attributes` is deliberately open, and its contents are event-type specific.
 
----
+## `incidents/` — implemented
 
-## Planned collections
-
-### `incidents/` — Increment 3
+One incident per correlated fault. **The document id is the `incidentId`**, so
+an incident is updated in place as it develops rather than appended to: the UI
+and Increment 4's agent both want the current state of INC-001, not a history of
+partial guesses about it.
 
 ```json
 {
   "incidentId": "INC-001",
   "status": "resolved",
-  "startedAt": "...",
-  "resolvedAt": "...",
-  "symptoms": ["r3 unreachable", "pc2 unreachable"],
-  "probableRootCause": "r2-r3 link failure"
+  "severity": "critical",
+  "startedAt": "<first event>",
+  "lastEventAt": "<most recent event>",
+  "resolvedAt": "<when the symptoms cleared>",
+  "affectedDevices": ["pc2", "r2", "r3"],
+  "unreachableDevices": [],
+  "symptoms": ["pc2 unreachable", "r2 eth2 down", "r3 unreachable"],
+  "rootCauseType": "link_failure",
+  "probableRootCause": "R2 <-> R3 link failure",
+  "rootCause": {
+    "type": "link_failure",
+    "devices": ["r2", "r3"],
+    "summary": "R2 <-> R3 link failure",
+    "confidence": "confirmed",
+    "evidence": [
+      "r2 reported eth2 down",
+      "r2 lost OSPF adjacency with r3",
+      "r3 lost OSPF adjacency with r2",
+      "r3 reported eth1 down",
+      "both ends reported independently, so both devices are alive - the link between them is not"
+    ],
+    "predictedUnreachable": ["pc2", "r3"],
+    "observedUnreachable": ["pc2", "r3"],
+    "predictionMatches": true
+  },
+  "eventIds": ["<networkEvents ids>"],
+  "eventCount": 13,
+  "updatedAt": "<server timestamp>"
 }
 ```
+
+`rootCauseType` is `link_failure`, `device_failure`, `unknown` or `analyzing`.
+`confidence` is `confirmed` when both ends of a link independently reported
+losing each other, and `probable` when one end reported and the silent peer is
+itself unreachable — consistent with that peer having failed, but the peer
+cannot corroborate because it is gone.
+
+`predictedUnreachable` is derived by removing the failed link or device from the
+topology and asking what is still reachable from r1. Storing it next to
+`observedUnreachable` makes each diagnosis check itself; a mismatch is recorded
+rather than hidden.
+
+`unreachableDevices` is live state — devices still down right now — where
+`observedUnreachable` inside `rootCause` is frozen at the moment the diagnosis
+was made. They differ during recovery, on purpose.
+
+`eventIds` completes the traceability chain: incident -> networkEvents ->
+networkLogs, so any conclusion can be followed to the raw text a device emitted.
+
+See `docs/incident-model.md` for the correlation and lifecycle rules.
+
+---
+
+## Planned collections
 
 ### `agentActions/` — Increment 5
 
@@ -209,10 +258,19 @@ and was it later rolled back.
 
 `firebase/firestore.indexes.json` defines composite indexes for the queries
 later increments need: health checks by device over time, events by device, by
-type or by producer over time, and raw logs by device over time.
+type or by producer over time, raw logs by device over time, and incidents by
+status over time.
 
 ## Security rules
 
-`firebase/firestore.rules` denies all direct client access. Every write comes
-from a backend service using the Admin SDK, which bypasses rules. This opens
-up deliberately in Increment 7 when the Angular UI and Firebase Auth arrive.
+`firebase/firestore.rules` denies **all client writes**. Every write comes from
+a backend service using the Admin SDK, which bypasses rules.
+
+Client *reads* are open for the five collections the Increment 3 dashboard
+renders (`devices`, `healthChecks`, `networkLogs`, `networkEvents`,
+`incidents`). Collections belonging to later increments stay closed.
+
+That is safe only because the dashboard runs against a local emulator holding
+synthetic lab data, with no Firebase Auth yet. **This ruleset must not be
+deployed to a real project as it stands** — Increment 7 replaces
+`allow read: if true` with per-user authorisation.

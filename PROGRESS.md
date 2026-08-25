@@ -6,11 +6,11 @@ Last updated: 2026-08-25
 |-----------|-------|--------|
 | **1** | Emulated network + Health Service + Firestore | **Complete — 15/15 criteria verified** |
 | **2** | Raw logs + Layer 0 normalization | **Complete — verified against a real link failure** |
-| 3 | Incident detection and correlation | Not started |
+| **3** | Incident detection and correlation | **Complete — both fault scenarios told apart** |
 | 4 | Claude read-only investigation agent | Not started |
 | 5 | Controlled network actions | Not started |
 | 6 | Risk levels and approval workflow | Not started |
-| 7 | Angular NOC UI | Not started |
+| 7 | Angular NOC UI | Read-only dashboard pulled forward; auth still to do |
 | 8 | Historical intelligence | Not started |
 | 9 | Advanced monitoring (SNMP, gNMI, BGP/OSPF) | Not started |
 | 10 | Production storage and scalability | Not started |
@@ -276,6 +276,129 @@ group.
 
 ---
 
+## Increment 3 — status
+
+Complete. `./scripts/e2e-incidents.sh` runs the whole stack against the real lab
+through **both** fault scenarios and passes all 16 assertions.
+
+The Incident Service watches `networkEvents/`, groups related events into
+`incidents/`, and infers a probable root cause deterministically - no LLM, which
+arrives in Increment 4 as an investigator over incidents that already exist.
+
+### The result that matters
+
+```
+INC-001 [resolved] R2 <-> R3 link failure (confirmed)
+INC-002 [resolved] R3 device failure (probable)
+```
+
+Both scenarios produce an **identical** set of `device_unreachable` events
+(`pc2`, `r3`), so ICMP alone cannot separate them. The discriminator is whether
+the far end of the link corroborated:
+
+- Link cut: r2 and r3 each report losing the other. Both are alive; the link is not.
+- Router stopped: only r2 reports. r3 says nothing and is unreachable - a failed
+  device cannot report its own failure.
+
+Each root cause also states what it *predicts* should be unreachable, derived by
+removing the failed link or device from the topology graph, and stores that next
+to what was observed:
+
+```
+predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
+```
+
+### Verified on this machine
+
+- **39/39 Incident Service unit tests**, plus 18 + 25 from Increments 1-2 (82 total).
+- Fixtures are the event sequences captured from live runs of scenarios 01 and
+  02, not invented.
+- Full traceability asserted end to end: incident -> `eventIds` ->
+  `networkEvents` -> `sourceLogId` -> `networkLogs` raw line.
+- Every incident resolved once the network recovered.
+- Increments 1 and 2 e2e re-run green.
+
+### What was built
+
+`services/incident-service/`
+- `src/config/topology.ts` - adjacency, router-id mapping, and graph reachability
+- `src/correlation/rootCause.ts` - the link-vs-device inference and its self-check
+- `src/correlation/correlator.ts` - grouping, settle window, lifecycle
+- `src/firebase/repository.ts` - `onSnapshot` on networkEvents, incidents keyed by incidentId
+- `tests/` - 39 unit tests
+
+`apps/web/` - Angular NOC dashboard, read-only live view (see below).
+
+`scripts/e2e-incidents.sh`, `scripts/assert-incidents.mjs`,
+`scripts/lib/services.sh`.
+
+### The traps this increment uncovered
+
+1. **Stopping a container destroys its containerlab veth pairs**, and starting
+   it back does not recreate them: the container returns with only eth0, FRR
+   reads its config happily, and OSPF sits at zero neighbours. Scenario 02 was
+   therefore unrecoverable by scenario 03 - never noticed, because only scenario
+   01 was ever exercised by a test. `03-restore-network.sh` now redeploys the
+   links when it restarts a container.
+
+2. **`setsid npx tsx` cannot be reliably killed.** It builds a four-deep chain
+   (`npx` -> `npm exec` -> `sh -c` -> `node`) and signalling `$!` orphans the
+   node process. Two runs were corrupted before this was found: one left a
+   Health Service writing events 39 minutes after its test finished, another
+   left a second Incident Service fighting the first over the same `INC-001`
+   document. **Every event type appearing exactly twice in the results is the
+   signature.** All three e2e scripts now run the built `dist/index.js` - one
+   process, killable - through `scripts/lib/services.sh`, which also sweeps
+   leftovers before and after every run.
+
+3. **Do not resolve incidents by matching each fault to a recovery.** FRR log
+   timestamps have one-second resolution, so an interface down/up pair inside
+   the same second arrives in arbitrary order; seen "up" first, the trailing
+   "down" re-opens a fault nothing ever clears and the incident hangs open
+   forever. Recovery events also go missing when the collector reattaches its
+   tail during a redeploy. Resolution follows observed reachability instead.
+
+4. **A recovered device will exonerate itself if you let it.** Re-inferring the
+   root cause after r3 came back - and started logging again - turned a
+   correctly diagnosed device failure into a "confirmed link failure". The
+   diagnosis is now frozen once definite, and only ever judged on events before
+   the first recovery.
+
+## Acceptance criteria — Increment 3
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Related events correlate into one incident | **Verified** |
+| 2 | Incidents carry a probable root cause | **Verified** |
+| 3 | A link failure is distinguished from a device failure | **Verified** — the headline result |
+| 4 | Correlation is deterministic and explainable | **Verified** — evidence stored in plain language |
+| 5 | Incidents resolve when the network recovers | **Verified** |
+| 6 | Incidents trace back to their events and raw logs | **Verified** |
+| 7 | Correlation logic is unit tested | **Verified** — 39 tests on captured sequences |
+| 8 | Increments 1 and 2 unaffected | **Verified** — both e2e re-run green |
+
+## The NOC dashboard (`apps/web`)
+
+Angular, read-only, live against the Firestore emulator on
+<http://localhost:4200> via `npm run web`.
+
+**This is Increment 7's UI pulled forward deliberately** and kept to a viewer -
+a correlation engine you cannot watch working is hard to trust. Authentication,
+per-user authorisation, incident acknowledgement and agent interaction remain
+Increment 7.
+
+Answering the question that prompted it: **a real Firebase project was not
+needed.** A browser app connects to the emulator with the ordinary Firebase SDK,
+live `onSnapshot` listeners included, so nothing about the UI has to change when
+a real project arrives in Increment 10 - and the repo stays credential-free with
+`reset-firestore.sh` still working.
+
+The one real blocker was `firebase/firestore.rules`, which denied all client
+access. Reads are now open for the five collections the dashboard renders;
+**client writes stay denied everywhere**, as do reads of the collections later
+increments add. That is safe only against a local emulator holding synthetic
+data, and the rules file says so loudly.
+
 ## Known gaps and follow-ups
 
 - **The lab does not survive a host reboot.** Containers restart, but the
@@ -304,12 +427,14 @@ group.
 
 ---
 
-## Starting Increment 3
+## Starting Increment 4
 
-Increment 3 turns the event stream into incidents: correlate the
-`interface_down` / `ospf_neighbor_down` events from r2 and r3 with the
-`device_unreachable` events for r3 and pc2 into a single incident with a
-probable root cause, and close it when the recovery events arrive.
+Increment 4 introduces Claude as a **read-only investigator** over the incidents
+that already exist. It does not correlate and it does not act; it reads an
+incident, follows the evidence chain down to the raw log lines, and writes its
+reasoning to `agentRuns/`.
 
-Everything it needs is now in `networkEvents/` on a common `deviceId`, with the
-raw evidence one `sourceLogId` lookup away. See `docs/incident-model.md`.
+Everything it needs is in place: incidents carry their events, events carry
+`sourceLogId`, and the deterministic diagnosis gives the agent something to
+agree or disagree with rather than a blank page. Keeping Increment 3's rules
+deterministic is what makes the agent's contribution measurable.

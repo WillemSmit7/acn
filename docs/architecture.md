@@ -14,7 +14,7 @@ HEALTH / DATA COLLECTION      <-- Increment 1 (built)
 LAYER 0  (normalization)      <-- Increment 2 (built)
    |
    v
-INCIDENT DETECTION            <-- Increment 3
+INCIDENT DETECTION            <-- Increment 3 (built)
    |
    v
 AI AGENT                      <-- Increment 4 (read-only), 5 (actions)
@@ -26,7 +26,7 @@ CONTROLLED NETWORK ACTIONS    <-- Increment 5, gated by risk policy in 6
 AUDIT + VERIFICATION
 ```
 
-## What exists today (Increments 1-2)
+## What exists today (Increments 1-3)
 
 ```
 +------------------------------------------------------------------+
@@ -34,35 +34,38 @@ AUDIT + VERIFICATION
 |                                                                  |
 |  +--------------------------+                                    |
 |  |       Containerlab       |                                    |
-|  |                          |                                    |
 |  |  PC1--R1--R2--R3--PC2    |   FRRouting 10.2 + OSPF area 0     |
 |  +------------+-------------+                                    |
-|               |                                                  |
-|               |  host routes: 10.255.0.0/24, 10.0.0.0/16 via r1  |
-|               |  FRR logs: lab/logs/<router> -> /var/log/frr     |
+|               |  host routes via r1 | FRR logs bind-mounted      |
 |               v                                                  |
 |  +--------------------------+  +----------------------------+    |
 |  |      Health Service      |  |          Layer 0           |    |
-|  |                          |  |                            |    |
-|  |  - ICMP checks every 30s |  |  - docker exec tail -F     |    |
-|  |  - state transition      |  |  - parse -> normalize      |    |
-|  |    detection             |  |  - raw line + event        |    |
+|  |  ICMP every 30s          |  |  docker exec tail -F       |    |
+|  |  state transitions       |  |  parse -> normalize        |    |
 |  +------------+-------------+  +-------------+--------------+    |
-|               |                              |                   |
-|               |  ICMP transitions            |  log-derived      |
-|               v                              v                   |
+|               |  ICMP transitions           |  log-derived       |
+|               v                             v                    |
 |  +--------------------------------------------------------+      |
 |  |         Firebase Emulator Suite - Firestore            |      |
-|  |                                                        |      |
-|  |  devices/  healthChecks/  networkLogs/  networkEvents/ |      |
-|  +--------------------------------------------------------+      |
+|  |  devices/ healthChecks/ networkLogs/ networkEvents/    |      |
+|  +---------------+--------------------------+-------------+      |
+|                  |  watches networkEvents   |  reads             |
+|                  v                          v                    |
+|  +--------------------------+   +---------------------------+    |
+|  |     Incident Service     |   |    NOC dashboard (web)    |    |
+|  |  correlate -> incidents/ |   |  Angular, read-only, live |    |
+|  +--------------------------+   +---------------------------+    |
 +------------------------------------------------------------------+
 ```
 
-Both services write into `networkEvents/`, distinguished by `source`. That is
-deliberate: Increment 3 correlates a device going unreachable (ICMP) with the
-interface and adjacency events the routers logged at the same moment, and it
-can only do that if both are in one stream on a common `deviceId`.
+The Health Service and Layer 0 both write into `networkEvents/`, distinguished
+by `source`. That is what makes Increment 3 possible: the Incident Service
+correlates a device going unreachable (ICMP) with the interface and adjacency
+events the routers logged at the same moment, which it can only do because both
+are in one stream on a common `deviceId`.
+
+The dashboard reads; it never writes. Every write in the system comes from a
+backend service using the Admin SDK.
 
 ## Why the Health Service pings loopbacks, not management addresses
 
@@ -142,6 +145,41 @@ The lesson worth carrying forward is that every one of these failures was
 silent. The daemon stayed up, the config looked right, and the events simply
 were not there. Increment 2's log pipeline is verified against a real link
 failure for exactly that reason.
+
+## Why correlation is deterministic
+
+Increment 3 uses explicit rules, not an LLM, and Claude does not appear until
+Increment 4. An inference nobody can reproduce is not a baseline to improve on.
+
+The rules turn on one question — did the far end of the link corroborate? — and
+every conclusion records its evidence in plain language plus a check of what it
+predicted against what was observed. See `docs/incident-model.md`.
+
+The hard lesson from building it: **do not resolve incidents by matching each
+fault to a recovery.** FRR log timestamps have one-second resolution, so an
+interface down/up pair inside the same second arrives in arbitrary order; seen
+"up" first, the trailing "down" re-opens a fault nothing ever clears. Recovery
+events also go missing when the collector reattaches its tail during a redeploy.
+Resolution follows observed reachability instead, because the Health Service
+re-checks that every round and it is therefore self-correcting.
+
+## The UI, and why the emulator is not a limitation
+
+The NOC dashboard (`apps/web`) is pulled forward from Increment 7 deliberately
+and kept to a read-only viewer: a correlation engine you cannot watch working is
+hard to trust.
+
+It connects to the Firestore **emulator** with the ordinary Firebase JS SDK -
+same queries, same live `onSnapshot` listeners it would use against a real
+project. So no real Firebase project is needed to run a browser UI, and nothing
+about the UI changes when one arrives in Increment 10. The repo stays free of
+credentials and `./scripts/reset-firestore.sh` keeps working.
+
+The one thing that did have to change is `firebase/firestore.rules`, which
+denied all client access. Reads are now open for the five collections the
+dashboard renders; writes stay denied everywhere, as do reads of the
+collections later increments add. That is safe only against a local emulator
+holding synthetic data — see the warning in the rules file.
 
 ## Deferred deliberately
 
