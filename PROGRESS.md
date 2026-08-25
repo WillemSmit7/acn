@@ -4,7 +4,7 @@ Last updated: 2026-08-25
 
 | Increment | Scope | Status |
 |-----------|-------|--------|
-| **1** | Emulated network + Health Service + Firestore | **Lab live; 11/15 criteria verified** |
+| **1** | Emulated network + Health Service + Firestore | **Complete — 15/15 criteria verified** |
 | 2 | Raw logs + Layer 0 normalization | Not started |
 | 3 | Incident detection and correlation | Not started |
 | 4 | Claude read-only investigation agent | Not started |
@@ -19,10 +19,10 @@ Last updated: 2026-08-25
 
 ## Increment 1 — status
 
-Docker and Containerlab are now installed, the lab is **deployed and OSPF has
-converged**, and the Health Service has been run against the real topology.
-What remains is the fault half of the demo (break the link, observe the events,
-restore) — see "Remaining step" below.
+Increment 1 is **complete**. `./scripts/e2e-test.sh` has been run end to end
+against the real lab and passes: healthy baseline → R2–R3 link broken →
+`device_unreachable` observed → link restored → `device_recovered` observed →
+Firestore assertions pass. All 15 acceptance criteria are verified.
 
 ### Verified on this machine
 
@@ -64,23 +64,29 @@ restore) — see "Remaining step" below.
 - **`assert-firestore.mjs` verified both ways** — passes on correct data, fails
   on an empty database.
 
-### Remaining step
+### End-to-end run
 
-Breaking the R2–R3 link needs `docker exec`, and the agent session driving this
-work started before `usermod -aG docker` took effect, so its process does not
-carry the `docker` group. Everything else was reachable because ICMP needs no
-Docker access.
+`./scripts/e2e-test.sh` on 2026-08-25, 5-second interval, against the deployed
+lab and the Firestore emulator:
 
-With the lab and the Firestore emulator already running, one command in a
-**freshly opened terminal** finishes the increment:
-
-```bash
-./scripts/e2e-test.sh
+```
+[20:56:27] r3   DOWN    no reply within timeout
+[20:56:27] pc2  DOWN    no reply within timeout
+[20:56:27] EVENT DEVICE_UNREACHABLE device=r3 severity=critical
+[20:56:27] EVENT DEVICE_UNREACHABLE device=pc2 severity=critical
+[20:57:00] r3   healthy 0.039ms
+[20:57:00] pc2  healthy 0.057ms
+[20:57:00] EVENT DEVICE_RECOVERED device=r3 severity=info
+[20:57:00] EVENT DEVICE_RECOVERED device=pc2 severity=info
 ```
 
-It clears the emulator, restores the baseline, starts the service on a 5-second
-interval, breaks the R2–R3 link, restores it, and asserts the resulting
-Firestore contents.
+Final state: `devices/ 5, healthChecks/ 45, networkEvents/ 4`, all eight
+assertions in `assert-firestore.mjs` passing.
+
+The important detail is what did **not** happen: r1, r2 and pc1 stayed healthy
+through the entire outage. The fault is reported with the correct blast radius —
+only the devices behind the broken link — which is what makes the loopback
+decision worth its cost. Reconvergence after `no shutdown` took ~4s.
 
 ## Acceptance criteria
 
@@ -89,22 +95,22 @@ Firestore contents.
 | 1 | Git repository exists with a clean structure | Done |
 | 2 | Topology starts with one documented command | **Verified** — lab deployed and converged |
 | 3 | PC1 can communicate with PC2 | **Verified** — host → r1 → r2 → r3 → pc2 path proven |
-| 4 | R2–R3 can deliberately be disconnected | Pending — needs `docker exec` |
-| 5 | Connectivity loss is visible | Pending — needs criterion 4 |
-| 6 | Network restores without a rebuild | Pending — needs `docker exec` |
+| 4 | R2–R3 can deliberately be disconnected | **Verified** — `01-link-failure.sh` shuts `r2:eth2` |
+| 5 | Connectivity loss is visible | **Verified** — r3 and pc2 went DOWN, r1/r2/pc1 unaffected |
+| 6 | Network restores without a rebuild | **Verified** — `03-restore-network.sh`, reconverged in ~4s |
 | 7 | Firebase Emulator Suite runs locally | **Verified** |
 | 8 | Health Service starts with one documented command | **Verified** |
 | 9 | Health Service checks devices periodically | **Verified** against the real lab |
 | 10 | Each health check is saved to Firestore | **Verified** against the real lab |
-| 11 | healthy → down creates `DEVICE_UNREACHABLE` | **Verified** against the emulator |
-| 12 | down → healthy creates `DEVICE_RECOVERED` | **Verified** against the emulator |
+| 11 | healthy → down creates `DEVICE_UNREACHABLE` | **Verified** — emitted by a real link failure |
+| 12 | down → healthy creates `DEVICE_RECOVERED` | **Verified** — emitted by a real link restore |
 | 13 | Service survives individual check failures | **Verified** by unit tests and by design |
 | 14 | No production credentials committed | **Verified** |
 | 15 | README documents setup and demonstration | Done |
 
-11 of 15 verified. Criteria 4–6 are the fault-injection half and clear together
-the moment `./scripts/e2e-test.sh` runs with Docker access. Criteria 11 and 12
-are verified as logic and persistence, but not yet driven by a real link failure.
+15 of 15 verified. Criteria 4–6 and 11–12 were all cleared by the single
+end-to-end run above, driven by an actual R2–R3 link failure rather than a
+synthetic target set.
 
 
 ## What was built
@@ -178,9 +184,15 @@ once incidents need to survive restarts.
 
 ## Known gaps and follow-ups
 
-- **Lab never deployed.** The most likely first-run issues are container image
-  availability and OSPF convergence timing. `deploy.sh` waits up to 30s for
-  convergence; extend it if that proves tight.
+- **The lab does not survive a host reboot.** Containers restart, but the
+  containerlab veth pairs and the host routes do not. FRR keeps its config, so
+  the symptom is misleading: routers look healthy but OSPF has zero neighbours
+  and `eth1`/`eth2` are simply absent. Recovery is
+  `containerlab deploy --topo lab/topology.clab.yml --reconfigure` followed by
+  re-adding the two host routes (needs sudo).
+- **`03-restore-network.sh` depends on the host routes.** Its convergence check
+  pings `10.255.0.3` from the host, so without the routes it fails even when the
+  lab itself is perfectly healthy.
 - **Scenarios 01 and 02 are indistinguishable from ICMP alone.** A link failure
   and a router failure produce identical symptoms today. Separating them is
   exactly what Increment 2's log ingestion is for.
@@ -193,7 +205,8 @@ once incidents need to survive restarts.
 
 ## Starting Increment 2
 
-Do not begin until the lab-backed run of `./scripts/e2e-test.sh` passes.
+The lab-backed run of `./scripts/e2e-test.sh` passes, so Increment 2 is clear
+to start.
 
 Increment 2 adds syslog ingestion and real Layer 0 normalization: raw messages
 land in `networkLogs/`, parsers turn them into `networkEvents/` with a

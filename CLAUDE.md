@@ -9,25 +9,18 @@ holds the durable context and the traps that cost real time.
 
 ---
 
-## Current state: Increment 1, 11/15 criteria verified
+## Current state: Increment 1 COMPLETE, 15/15 criteria verified
 
-The lab is deployed and OSPF-converged. The Health Service has been verified
-against the **real** topology. What remains is the fault half: break the R2–R3
-link, observe the events, restore.
+`./scripts/e2e-test.sh` passes end to end against the real lab: healthy baseline
+→ R2–R3 broken → `DEVICE_UNREACHABLE` for r3 and pc2 → restored →
+`DEVICE_RECOVERED` → all eight Firestore assertions pass. r1, r2 and pc1 stayed
+healthy throughout, so the blast radius is correct.
 
 ### The next action
 
-With the lab and Firestore emulator running, one command finishes Increment 1:
+Increment 2 — syslog ingestion and Layer 0 normalization. See PROGRESS.md.
 
-```bash
-./scripts/e2e-test.sh
-```
-
-It clears the emulator, restores the baseline, starts the service at 5s
-intervals, breaks R2–R3, restores it, and asserts the Firestore contents.
-Needs Docker access (see below). No sudo if host routes already exist.
-
-Verify what is actually running before assuming:
+Before trusting any of it, verify what is actually running:
 
 ```bash
 for ip in 10.255.0.1 10.255.0.2 10.255.0.3 10.0.1.2 10.0.3.2; do
@@ -36,9 +29,21 @@ done
 curl -sf http://127.0.0.1:8080/ >/dev/null && echo "emulator UP"
 ```
 
-**Do not start Increment 2** until `./scripts/e2e-test.sh` passes.
+**A host reboot silently guts the lab.** Containers come back and FRR keeps its
+config, so the routers *look* fine — but the containerlab veth pairs are gone
+(`eth1`/`eth2` simply absent, OSPF shows zero neighbours) and the host routes
+are gone with them. Recovery, and neither step is optional:
 
----
+```bash
+containerlab deploy --topo lab/topology.clab.yml --reconfigure   # no sudo needed
+sudo ip route replace 10.255.0.0/24 via 172.20.20.11             # Willem must run
+sudo ip route replace 10.0.0.0/16 via 172.20.20.11               # Willem must run
+```
+
+Prefer that over `./lab/deploy.sh` when the lab was only route-broken —
+deploy.sh `--reconfigure`s unconditionally. Note `03-restore-network.sh` polls
+`ping 10.255.0.3` **from the host**, so it fails without those routes even when
+the lab itself is healthy.
 
 ## Environment traps
 
