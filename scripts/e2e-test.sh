@@ -44,6 +44,18 @@ echo "==> Starting the Health Service (interval ${HEALTH_CHECK_INTERVAL_SECONDS}
 npm run health-service --silent > "${SERVICE_LOG}" 2>&1 &
 SERVICE_PID=$!
 
+# A service that died at startup must surface here, not 45 seconds later as a
+# confusing "no health checks were recorded" assertion failure after the lab
+# has already been broken and restored.
+sleep 3
+if ! kill -0 "${SERVICE_PID}" 2>/dev/null; then
+  echo "ERROR: the Health Service exited immediately after starting." >&2
+  echo "----------------------- service log -----------------------" >&2
+  cat "${SERVICE_LOG}" >&2
+  echo "-----------------------------------------------------------" >&2
+  exit 1
+fi
+
 echo "==> Collecting a healthy baseline"
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 2 + 5 ))
 
