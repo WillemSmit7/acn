@@ -21,6 +21,8 @@ cd "${REPO_ROOT}"
 # router logs through 'docker exec'.
 # shellcheck source=../lab/lib/docker.sh
 source "${REPO_ROOT}/lab/lib/docker.sh"
+# shellcheck source=lib/services.sh
+source "${REPO_ROOT}/scripts/lib/services.sh"
 resolve_docker || exit 2
 
 export FIRESTORE_EMULATOR_HOST="${FIRESTORE_EMULATOR_HOST:-127.0.0.1:8080}"
@@ -34,36 +36,15 @@ LAYER_ZERO_LOG="$(mktemp -t acn-layer0-XXXXXX.log)"
 HEALTH_PID=""
 LAYER_ZERO_PID=""
 
-# Each service is started with setsid so it leads its own process group, and is
-# stopped by signalling that whole group. Signalling only the pid leaves the
-# actual node process orphaned and still writing to Firestore, which silently
-# corrupts any later run - that is not hypothetical, it happened during
-# Increment 2 development.
-start_service() {
-  local entrypoint="$1" logfile="$2"
-  setsid npx tsx "${entrypoint}" > "${logfile}" 2>&1 &
-  echo $!
-}
-
-stop_service() {
-  local pid="$1"
-  [ -z "${pid}" ] && return 0
-  kill -TERM "-${pid}" 2>/dev/null || kill -TERM "${pid}" 2>/dev/null || true
-  # Give a SIGTERM handler a moment to drain buffered writes before insisting.
-  for _ in $(seq 1 20); do
-    kill -0 "${pid}" 2>/dev/null || return 0
-    sleep 0.25
-  done
-  kill -KILL "-${pid}" 2>/dev/null || true
-}
-
 cleanup() {
-  stop_service "${LAYER_ZERO_PID}"
-  stop_service "${HEALTH_PID}"
+  acn_stop_service "${LAYER_ZERO_PID}"
+  acn_stop_service "${HEALTH_PID}"
+  acn_sweep_services
 }
 trap cleanup EXIT
 
-alive() { kill -0 "$1" 2>/dev/null; }
+acn_build_services
+acn_sweep_services
 
 echo "==> Clearing previous emulator data"
 ./scripts/reset-firestore.sh
@@ -72,24 +53,16 @@ echo "==> Restoring the lab to a healthy baseline"
 ./lab/scenarios/03-restore-network.sh
 
 echo "==> Starting Layer 0"
-LAYER_ZERO_PID="$(start_service services/layer-zero/src/index.ts "${LAYER_ZERO_LOG}")"
+LAYER_ZERO_PID="$(acn_start_service services/layer-zero/dist/index.js "${LAYER_ZERO_LOG}")"
 
 echo "==> Starting the Health Service (interval ${HEALTH_CHECK_INTERVAL_SECONDS}s)"
-HEALTH_PID="$(start_service services/health-service/src/index.ts "${HEALTH_LOG}")"
+HEALTH_PID="$(acn_start_service services/health-service/dist/index.js "${HEALTH_LOG}")"
 
 # A service that dies at startup must surface here, not 45 seconds later as a
 # confusing assertion failure after the lab has been broken and restored.
 sleep 5
-for entry in "Layer 0:${LAYER_ZERO_PID}:${LAYER_ZERO_LOG}" "Health Service:${HEALTH_PID}:${HEALTH_LOG}"; do
-  name="${entry%%:*}"; rest="${entry#*:}"; pid="${rest%%:*}"; logfile="${rest#*:}"
-  if ! alive "${pid}"; then
-    echo "ERROR: ${name} exited immediately after starting." >&2
-    echo "----------------------- ${name} log -----------------------" >&2
-    cat "${logfile}" >&2
-    echo "-----------------------------------------------------------" >&2
-    exit 1
-  fi
-done
+acn_require_alive "Layer 0" "${LAYER_ZERO_PID}" "${LAYER_ZERO_LOG}"
+acn_require_alive "Health Service" "${HEALTH_PID}" "${HEALTH_LOG}"
 
 echo "==> Collecting a healthy baseline"
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 2 + 5 ))
