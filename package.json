@@ -1,0 +1,23 @@
+{
+  "name": "acn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-Centered Network (ACN) - operational network data collection, normalization and (later) AI-assisted remediation.",
+  "workspaces": [
+    "services/health-service"
+  ],
+  "scripts": {
+    "lab:deploy": "./lab/deploy.sh",
+    "lab:destroy": "./lab/destroy.sh",
+    "lab:break": "./lab/scenarios/01-link-failure.sh",
+    "lab:break-router": "./lab/scenarios/02-router-failure.sh",
+    "lab:restore": "./lab/scenarios/03-restore-network.sh",
+    "emulators": "firebase emulators:start",
+    "health-service": "npm run dev --workspace services/health-service",
+    "build": "npm run build --workspace services/health-service",
+    "test": "npm run test --workspace services/health-service"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

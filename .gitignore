@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+# Build output
+dist/
+build/
+*.tsbuildinfo
+# Environment / secrets  -- NEVER commit credentials
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*service-account*.json
+*.pem
+*.key
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase-export/
+emulator-data/
+# Containerlab runtime artifacts
+clab-*/
+.clab-*
+*.clab.yml.bak
+# Logs / OS
+*.log
+.DS_Store
