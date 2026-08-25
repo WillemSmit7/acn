@@ -126,11 +126,20 @@ export class HealthService {
   }
 }
 
+/**
+ * Container-to-container RTT in the lab is routinely under 0.1ms, so a fixed
+ * single decimal would render every healthy check as a misleading "0.0ms".
+ * Scale the precision to the magnitude instead.
+ */
+function formatLatency(latencyMs: number | null): string {
+  if (latencyMs === null) return 'n/a';
+  return `${latencyMs.toFixed(latencyMs < 1 ? 3 : 1)}ms`;
+}
+
 function formatResult(result: HealthCheckResult): string {
   const device = result.deviceId.padEnd(4);
   if (result.status === 'healthy') {
-    const latency = result.latencyMs === null ? 'n/a' : `${result.latencyMs.toFixed(1)}ms`;
-    return `${device} healthy ${latency}`;
+    return `${device} healthy ${formatLatency(result.latencyMs)}`;
   }
   return `${device} DOWN    ${result.error ?? ''}`.trimEnd();
 }

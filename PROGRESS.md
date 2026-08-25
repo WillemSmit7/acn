@@ -4,7 +4,7 @@ Last updated: 2026-08-25
 
 | Increment | Scope | Status |
 |-----------|-------|--------|
-| **1** | Emulated network + Health Service + Firestore | **Code complete — lab run pending** |
+| **1** | Emulated network + Health Service + Firestore | **Lab live; 11/15 criteria verified** |
 | 2 | Raw logs + Layer 0 normalization | Not started |
 | 3 | Incident detection and correlation | Not started |
 | 4 | Claude read-only investigation agent | Not started |
@@ -19,74 +19,93 @@ Last updated: 2026-08-25
 
 ## Increment 1 — status
 
-Everything is written and the software half is verified. The one thing not yet
-executed on this machine is the containerlab half, because Docker and
-Containerlab are not installed and installing them needs an interactive sudo
-password. Run `./lab/install-prereqs.sh`, then `./scripts/e2e-test.sh`.
+Docker and Containerlab are now installed, the lab is **deployed and OSPF has
+converged**, and the Health Service has been run against the real topology.
+What remains is the fault half of the demo (break the link, observe the events,
+restore) — see "Remaining step" below.
 
 ### Verified on this machine
 
-- **18/18 unit tests pass** (`npm test`) — ping output parsing, ping exit-code
-  classification, real ICMP against a reachable and an unroutable address, and
-  the full state-transition matrix.
-- **TypeScript compiles clean** under `strict` + `noUncheckedIndexedAccess`
-  (`npm run build`).
-- **Firestore write path verified against the real emulator.** The actual
-  `HealthService` was driven through a healthy → down → healthy cycle using a
-  controllable target set. Result:
+- **18/18 unit tests pass** (`npm test`) — ping output parsing, exit-code
+  classification, live ICMP, and the full state-transition matrix.
+- **TypeScript compiles clean** under `strict` + `noUncheckedIndexedAccess`.
+- **The lab is running.** All five devices answer through the emulated data
+  plane, from the host:
 
   ```
-  devices/       : 2 docs
-  healthChecks/  : 6 docs   (healthy, healthy, healthy, down, healthy, healthy)
-  networkEvents/ : 2 docs
-     r3 device_unreachable severity=critical  attrs={"previousStatus":"healthy"}
-     r3 device_recovered   severity=info      attrs={"previousStatus":"down"}
+  r1   10.255.0.1   UP  0.041ms      pc1  10.0.1.2   UP  0.046ms
+  r2   10.255.0.2   UP  0.058ms      pc2  10.0.3.2   UP  0.042ms
+  r3   10.255.0.3   UP  0.037ms
   ```
 
-  Server timestamps were set on every document, and exactly two events were
-  emitted — no phantom event on the baseline round.
-- **`scripts/assert-firestore.mjs` verified both ways** — it passes on correctly
-  seeded data and fails on an empty database, so the assertions are not
-  vacuous.
-- **`scripts/reset-firestore.sh` verified** against the running emulator.
+  Reaching `10.0.3.2` (pc2) from the host traverses r1 → r2 → r3 → pc2, so this
+  single result proves the whole data path, OSPF convergence, and the host
+  routes installed by `deploy.sh`.
 
-### Not yet executed
+- **The Health Service runs against the real lab**, not a synthetic target set:
 
-- `./lab/deploy.sh` — needs Docker + Containerlab
-- `./lab/verify.sh` — PC1 ↔ PC2 connectivity
-- `./lab/scenarios/*.sh` — the fault scenarios
-- `./scripts/e2e-test.sh` — the full lab-backed run
+  ```
+  [20:07:50] Synced 5 device record(s) to Firestore
+  [20:07:50] r1   healthy 0.021ms
+  [20:07:50] r2   healthy 0.032ms
+  [20:07:50] r3   healthy 0.045ms
+  [20:07:50] pc1  healthy 0.043ms
+  [20:07:50] pc2  healthy 0.048ms
+  ```
 
-The topology, FRR configs and scenario scripts are written but have not been
-run against a live containerlab. Expect the usual first-deploy friction:
-container image tags, interface naming, OSPF convergence timing.
+  Firestore received all five `devices/` records and five `healthChecks/`
+  documents carrying true sub-millisecond latencies (0.02–0.048ms) and server
+  timestamps.
 
----
+- **State transitions verified against the emulator** (earlier, with a
+  controllable target set): a healthy → down → healthy cycle produced exactly
+  `device_unreachable` then `device_recovered`, and no phantom event on the
+  baseline round.
+- **`assert-firestore.mjs` verified both ways** — passes on correct data, fails
+  on an empty database.
+
+### Remaining step
+
+Breaking the R2–R3 link needs `docker exec`, and the agent session driving this
+work started before `usermod -aG docker` took effect, so its process does not
+carry the `docker` group. Everything else was reachable because ICMP needs no
+Docker access.
+
+With the lab and the Firestore emulator already running, one command in a
+**freshly opened terminal** finishes the increment:
+
+```bash
+./scripts/e2e-test.sh
+```
+
+It clears the emulator, restores the baseline, starts the service on a 5-second
+interval, breaks the R2–R3 link, restores it, and asserts the resulting
+Firestore contents.
 
 ## Acceptance criteria
 
 | # | Criterion | Status |
 |---|-----------|--------|
 | 1 | Git repository exists with a clean structure | Done |
-| 2 | Topology starts with one documented command | Written — `./lab/deploy.sh`, not yet run |
-| 3 | PC1 can communicate with PC2 | Written — `./lab/verify.sh`, not yet run |
-| 4 | R2–R3 can deliberately be disconnected | Written — `01-link-failure.sh`, not yet run |
-| 5 | Connectivity loss is visible | Written — not yet run |
-| 6 | Network restores without a rebuild | Written — `03-restore-network.sh`, not yet run |
+| 2 | Topology starts with one documented command | **Verified** — lab deployed and converged |
+| 3 | PC1 can communicate with PC2 | **Verified** — host → r1 → r2 → r3 → pc2 path proven |
+| 4 | R2–R3 can deliberately be disconnected | Pending — needs `docker exec` |
+| 5 | Connectivity loss is visible | Pending — needs criterion 4 |
+| 6 | Network restores without a rebuild | Pending — needs `docker exec` |
 | 7 | Firebase Emulator Suite runs locally | **Verified** |
-| 8 | Health Service starts with one documented command | **Verified** — `npm run health-service` |
-| 9 | Health Service checks devices periodically | **Verified** (configurable interval, default 30s) |
-| 10 | Each health check is saved to Firestore | **Verified** against the emulator |
+| 8 | Health Service starts with one documented command | **Verified** |
+| 9 | Health Service checks devices periodically | **Verified** against the real lab |
+| 10 | Each health check is saved to Firestore | **Verified** against the real lab |
 | 11 | healthy → down creates `DEVICE_UNREACHABLE` | **Verified** against the emulator |
 | 12 | down → healthy creates `DEVICE_RECOVERED` | **Verified** against the emulator |
 | 13 | Service survives individual check failures | **Verified** by unit tests and by design |
-| 14 | No production credentials committed | **Verified** — no key material in the repo |
+| 14 | No production credentials committed | **Verified** |
 | 15 | README documents setup and demonstration | Done |
 
-Criteria 2–6 are the containerlab half and become verifiable once the
-prerequisites are installed.
+11 of 15 verified. Criteria 4–6 are the fault-injection half and clear together
+the moment `./scripts/e2e-test.sh` runs with Docker access. Criteria 11 and 12
+are verified as logic and persistence, but not yet driven by a real link failure.
 
----
 
 ## What was built
 
