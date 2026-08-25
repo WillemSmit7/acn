@@ -13,6 +13,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Fail before starting anything if Docker is unreachable.
+# shellcheck source=../lab/lib/docker.sh
+source "${REPO_ROOT}/lab/lib/docker.sh"
+resolve_docker || exit 2
+
 export FIRESTORE_EMULATOR_HOST="${FIRESTORE_EMULATOR_HOST:-127.0.0.1:8080}"
 export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-acn-local}"
 export HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-5}"

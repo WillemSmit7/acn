@@ -9,7 +9,12 @@
 # Repeatable: the container is stopped, not deleted, so it can be started again.
 set -euo pipefail
 
+LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/docker.sh
+source "${LAB_DIR}/lib/docker.sh"
+resolve_docker || exit 2
+
 echo "==> Stopping the R3 container"
-docker stop clab-acn-r3 >/dev/null
+${DOCKER} stop clab-acn-r3 >/dev/null
 
 echo "==> R3 is down. Expect r3 and pc2 to go unreachable within one check interval."

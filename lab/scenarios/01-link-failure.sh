@@ -9,8 +9,13 @@
 # Repeatable: this only shuts an interface, it never rebuilds the lab.
 set -euo pipefail
 
+LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/docker.sh
+source "${LAB_DIR}/lib/docker.sh"
+resolve_docker || exit 2
+
 echo "==> Shutting down eth2 (to-r3) on R2"
-docker exec clab-acn-r2 vtysh -c 'configure terminal' -c 'interface eth2' -c 'shutdown'
+${DOCKER} exec clab-acn-r2 vtysh -c 'configure terminal' -c 'interface eth2' -c 'shutdown'
 
 echo "==> R2 eth2 is now down. Expect r3 and pc2 to go unreachable within one check interval."
-docker exec clab-acn-r2 vtysh -c 'show interface brief' | sed -n '1,12p'
+${DOCKER} exec clab-acn-r2 vtysh -c 'show interface brief' | sed -n '1,12p'

@@ -21,7 +21,7 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo apt-get update
   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
   sudo usermod -aG docker "${USER}"
-  echo "    NOTE: log out and back in (or run 'newgrp docker') for group membership to apply."
+  echo "    NOTE: docker group membership does not apply to your current shell."
 else
   echo "    Docker already installed: $(docker --version)"
 fi
@@ -38,4 +38,16 @@ sudo docker pull quay.io/frrouting/frr:10.2.1
 sudo docker pull ghcr.io/hellt/network-multitool:latest
 
 echo
-echo "==> Prerequisites installed. Next: ./lab/deploy.sh"
+echo "==> Prerequisites installed."
+if ! docker info >/dev/null 2>&1; then
+  cat <<'MSG'
+
+    IMPORTANT: your current shell cannot reach Docker yet, because its
+    docker-group membership was granted after the shell started. Activate it:
+
+        newgrp docker
+
+    (or log out and back in for a permanent fix), then continue.
+MSG
+fi
+echo "==> Next: ./lab/deploy.sh"

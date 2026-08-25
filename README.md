@@ -31,8 +31,15 @@ UI, no incident correlation.
 ./lab/install-prereqs.sh     # needs sudo; log out and back in afterwards
 ```
 
-Docker group membership only takes effect after a new login session (or
-`newgrp docker`).
+Docker group membership does **not** apply to the shell you ran the installer
+from. Activate it without logging out:
+
+```bash
+newgrp docker
+```
+
+Check it worked with `id` — you should see `docker` in the group list. Every
+lab script verifies Docker access up front and tells you this if it is missing.
 
 ---
 
