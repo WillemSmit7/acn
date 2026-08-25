@@ -28,3 +28,6 @@ clab-*/
 .DS_Store
 # Editor-local settings
 .vscode/
+
+# FRR logs written into the lab by the routers (bind-mounted, runtime only).
+lab/logs/

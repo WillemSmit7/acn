@@ -28,6 +28,16 @@ resolve_docker
 CLAB="containerlab"
 [ "${DOCKER}" = "sudo docker" ] && CLAB="sudo containerlab"
 
+# FRR writes its per-daemon logs into these directories (bind-mounted to
+# /var/log/frr in each router) and Layer 0 reads them from the host. Mode 777 is
+# required because the FRR daemons run as uid 100 inside the container and ospfd
+# creates its log only after dropping privileges - see lab/configs/daemons.
+echo "==> Preparing log directories for Layer 0"
+for router in r1 r2 r3; do
+  mkdir -p "${LAB_DIR}/logs/${router}"
+  chmod 777 "${LAB_DIR}/logs/${router}"
+done
+
 echo "==> Deploying containerlab topology"
 ${CLAB} deploy --topo "${TOPOLOGY}" --reconfigure
 

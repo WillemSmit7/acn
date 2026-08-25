@@ -42,6 +42,10 @@ topology:
         - configs/r1/frr.conf:/etc/frr/frr.conf
         - configs/daemons:/etc/frr/daemons
         - configs/vtysh.conf:/etc/frr/vtysh.conf
+        # FRR writes zebra.log and ospfd.log here; Layer 0 reads them from the
+        # host side. deploy.sh creates the directory mode 777 because the FRR
+        # daemons run as uid 100 (frr) inside the container.
+        - logs/r1:/var/log/frr
       labels:
         acn-role: router
 
@@ -51,6 +55,10 @@ topology:
         - configs/r2/frr.conf:/etc/frr/frr.conf
         - configs/daemons:/etc/frr/daemons
         - configs/vtysh.conf:/etc/frr/vtysh.conf
+        # FRR writes zebra.log and ospfd.log here; Layer 0 reads them from the
+        # host side. deploy.sh creates the directory mode 777 because the FRR
+        # daemons run as uid 100 (frr) inside the container.
+        - logs/r2:/var/log/frr
       labels:
         acn-role: router
 
@@ -60,6 +68,10 @@ topology:
         - configs/r3/frr.conf:/etc/frr/frr.conf
         - configs/daemons:/etc/frr/daemons
         - configs/vtysh.conf:/etc/frr/vtysh.conf
+        # FRR writes zebra.log and ospfd.log here; Layer 0 reads them from the
+        # host side. deploy.sh creates the directory mode 777 because the FRR
+        # daemons run as uid 100 (frr) inside the container.
+        - logs/r3:/var/log/frr
       labels:
         acn-role: router
 

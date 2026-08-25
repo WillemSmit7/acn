@@ -1,6 +1,20 @@
 # FRR daemons enabled for the ACN lab.
 # Increment 1 only needs zebra (interface/IP/route management) and ospfd
 # (so PC1 <-> PC2 connectivity is dynamic and a link failure is visible).
+#
+# Increment 2: zebra and ospfd each write their own log file, set here as a
+# startup flag rather than with `log file` in frr.conf. Two reasons, both found
+# the hard way in this lab:
+#   - The log directory is /var/log/frr, NOT FRR's own /var/run/frr. zebra opens
+#     its log file while still root (its zebra.log there is root-owned), but
+#     ospfd opens its own only after dropping to the frr user, and then cannot
+#     create a file in /var/run/frr. It fails silently: ospfd stays up, and OSPF
+#     adjacency changes simply never reach disk. /var/log/frr is a bind mount
+#     from lab/logs/<router>/ created mode 777 by deploy.sh, so both daemons can
+#     write regardless of when they drop privileges.
+#   - Separate files per daemon, so two daemons never share one descriptor.
+# The bind mount also means Layer 0 reads these logs straight off the host and
+# needs no Docker access at all.
 zebra=yes
 bgpd=no
 ospfd=yes
@@ -22,9 +36,9 @@ pathd=no
 staticd=yes
 
 vtysh_enable=yes
-zebra_options="  -A 127.0.0.1 -s 90000000"
+zebra_options="  -A 127.0.0.1 -s 90000000 --log file:/var/log/frr/zebra.log --log-level debugging"
 bgpd_options="   -A 127.0.0.1"
-ospfd_options="  -A 127.0.0.1"
+ospfd_options="  -A 127.0.0.1 --log file:/var/log/frr/ospfd.log --log-level debugging"
 ospf6d_options=" -A ::1"
 ripd_options="   -A 127.0.0.1"
 ripngd_options=" -A ::1"
