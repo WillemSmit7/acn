@@ -64,6 +64,14 @@ export interface NetworkEvent {
   source: 'health-service';
 }
 
+/**
+ * Increment 2 note: networkEvents/ is now written by two producers. Layer 0
+ * adds log-derived types (interface_down, ospf_neighbor_down, ...) carrying a
+ * sourceLogId back-reference. The Health Service writes sourceLogId as null,
+ * since an ICMP probe has no originating log line. `source` is what tells the
+ * two apart - see services/layer-zero/src/models/types.ts.
+ */
+
 /** Status transition detected between two consecutive check rounds. */
 export interface StateTransition {
   deviceId: string;

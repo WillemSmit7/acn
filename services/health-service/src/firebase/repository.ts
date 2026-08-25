@@ -89,6 +89,11 @@ export class AcnRepository {
         severity: event.severity,
         attributes: event.attributes,
         source: event.source,
+        // Health Service events are derived from an ICMP probe, not from a log
+        // line, so there is no networkLogs document to point at. The field is
+        // still written so every networkEvents document has the same shape and
+        // consumers never have to special-case its absence.
+        sourceLogId: null,
         occurredAt: FieldValue.serverTimestamp(),
       });
     }
