@@ -4,24 +4,70 @@
       "collectionGroup": "healthChecks",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "deviceId", "order": "ASCENDING" },
-        { "fieldPath": "checkedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "checkedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "networkEvents",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "deviceId", "order": "ASCENDING" },
-        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "networkEvents",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "eventType", "order": "ASCENDING" },
-        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "eventType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receivedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

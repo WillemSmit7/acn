@@ -26,10 +26,17 @@ export LOG_LEVEL=info
 
 SERVICE_LOG="$(mktemp -t acn-health-XXXXXX.log)"
 
+# The service is stopped by signalling its whole process group. Signalling only
+# the pid kills the npm/npx wrapper and leaves the actual node process orphaned
+# and still writing to Firestore, which silently corrupts later runs.
 cleanup() {
   if [ -n "${SERVICE_PID:-}" ] && kill -0 "${SERVICE_PID}" 2>/dev/null; then
-    kill "${SERVICE_PID}" 2>/dev/null || true
-    wait "${SERVICE_PID}" 2>/dev/null || true
+    kill -TERM "-${SERVICE_PID}" 2>/dev/null || kill -TERM "${SERVICE_PID}" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      kill -0 "${SERVICE_PID}" 2>/dev/null || return 0
+      sleep 0.25
+    done
+    kill -KILL "-${SERVICE_PID}" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -41,7 +48,10 @@ echo "==> Restoring the lab to a healthy baseline"
 ./lab/scenarios/03-restore-network.sh
 
 echo "==> Starting the Health Service (interval ${HEALTH_CHECK_INTERVAL_SECONDS}s)"
-npm run health-service --silent > "${SERVICE_LOG}" 2>&1 &
+# setsid so the service leads its own process group - see cleanup() above.
+# Invoked directly rather than through 'npm run health-service', which uses
+# tsx watch: a file watcher is the wrong thing to run inside a test.
+setsid npx tsx services/health-service/src/index.ts > "${SERVICE_LOG}" 2>&1 &
 SERVICE_PID=$!
 
 # A service that died at startup must surface here, not 45 seconds later as a
