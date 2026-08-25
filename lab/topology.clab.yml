@@ -1,0 +1,92 @@
+# ACN Increment 1 topology
+#
+#   PC1 ---- R1 ---- R2 ---- R3 ---- PC2
+#
+# Data plane addressing (/30 point-to-point links):
+#   PC1-R1 : 10.0.1.0/30    PC1 .2   R1 .1
+#   R1-R2  : 10.0.12.0/30   R1  .1   R2 .2
+#   R2-R3  : 10.0.23.0/30   R2  .1   R3 .2
+#   R3-PC2 : 10.0.3.0/30    R3  .1   PC2 .2
+#
+# Router loopbacks (what the Health Service pings - they are only reachable
+# THROUGH the data plane, so a broken link makes them go dark):
+#   R1 10.255.0.1/32   R2 10.255.0.2/32   R3 10.255.0.3/32
+#
+# Management addressing (always reachable, used for docker exec / vtysh):
+#   R1 172.20.20.11   R2 172.20.20.12   R3 172.20.20.13
+#   PC1 172.20.20.21  PC2 172.20.20.22
+#
+# Interface naming (derived from link order below - do not reorder casually):
+#   r1: eth1->pc1  eth2->r2
+#   r2: eth1->r1   eth2->r3
+#   r3: eth1->r2   eth2->pc2
+
+name: acn
+
+mgmt:
+  network: acn-mgmt
+  ipv4-subnet: 172.20.20.0/24
+
+topology:
+  defaults:
+    kind: linux
+
+  kinds:
+    linux:
+      image: quay.io/frrouting/frr:10.2.1
+
+  nodes:
+    r1:
+      mgmt-ipv4: 172.20.20.11
+      binds:
+        - configs/r1/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+        - configs/vtysh.conf:/etc/frr/vtysh.conf
+      labels:
+        acn-role: router
+
+    r2:
+      mgmt-ipv4: 172.20.20.12
+      binds:
+        - configs/r2/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+        - configs/vtysh.conf:/etc/frr/vtysh.conf
+      labels:
+        acn-role: router
+
+    r3:
+      mgmt-ipv4: 172.20.20.13
+      binds:
+        - configs/r3/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+        - configs/vtysh.conf:/etc/frr/vtysh.conf
+      labels:
+        acn-role: router
+
+    pc1:
+      image: ghcr.io/hellt/network-multitool:latest
+      mgmt-ipv4: 172.20.20.21
+      labels:
+        acn-role: host
+      exec:
+        - ip address add 10.0.1.2/30 dev eth1
+        - ip link set eth1 up
+        - ip route add 10.0.0.0/16 via 10.0.1.1
+        - ip route add 10.255.0.0/24 via 10.0.1.1
+
+    pc2:
+      image: ghcr.io/hellt/network-multitool:latest
+      mgmt-ipv4: 172.20.20.22
+      labels:
+        acn-role: host
+      exec:
+        - ip address add 10.0.3.2/30 dev eth1
+        - ip link set eth1 up
+        - ip route add 10.0.0.0/16 via 10.0.3.1
+        - ip route add 10.255.0.0/24 via 10.0.3.1
+
+  links:
+    - endpoints: ["pc1:eth1", "r1:eth1"]
+    - endpoints: ["r1:eth2", "r2:eth1"]
+    - endpoints: ["r2:eth2", "r3:eth1"]
+    - endpoints: ["r3:eth2", "pc2:eth1"]
