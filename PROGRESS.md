@@ -429,6 +429,10 @@ data, and the rules file says so loudly.
 
 ## Starting Increment 4
 
+**Handoff document: [docs/increment-4-handoff.md](docs/increment-4-handoff.md)** —
+current verified state, the lab's present condition, scope, constraints, traps
+and suggested acceptance criteria for whoever picks this up.
+
 Increment 4 introduces Claude as a **read-only investigator** over the incidents
 that already exist. It does not correlate and it does not act; it reads an
 incident, follows the evidence chain down to the raw log lines, and writes its

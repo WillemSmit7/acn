@@ -33,7 +33,7 @@ There is also a read-only Angular NOC dashboard (`apps/web`, `npm run web`,
 ### The next action
 
 Increment 4 — Claude as a read-only investigator over existing incidents.
-See PROGRESS.md.
+**Start with `docs/increment-4-handoff.md`**, then PROGRESS.md.
 
 Verify what is actually running before assuming anything:
 
