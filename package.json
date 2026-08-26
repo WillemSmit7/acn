@@ -7,6 +7,8 @@
     "services/health-service",
     "services/layer-zero",
     "services/incident-service",
+    "services/agent-service",
+    "services/lab-controller",
     "apps/web"
   ],
   "scripts": {
@@ -18,10 +20,13 @@
     "emulators": "firebase emulators:start",
     "health-service": "npm run dev --workspace services/health-service",
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspace services/health-service --workspace services/layer-zero --workspace services/incident-service --workspace services/agent-service --workspace services/lab-controller",
     "layer-zero": "npm run dev --workspace services/layer-zero",
     "incident-service": "npm run dev --workspace services/incident-service",
-    "web": "npm start --workspace web"
+    "agent-service": "npm run dev --workspace services/agent-service",
+    "lab-controller": "npm run dev --workspace services/lab-controller",
+    "web": "npm start --workspace web",
+    "start:all": "./scripts/start-all.sh"
   },
   "engines": {
     "node": ">=20"

@@ -1,4 +1,12 @@
-# Increment 4 handoff — Claude as a read-only investigator
+# Increment 4 handoff — GPT-5.6 Luna as a read-only investigator
+
+> **Implementation update (2026-08-26):** Increment 4 is implemented on
+> `4-increment-4-gpt-investigator` with `gpt-5.6-luna` and low reasoning effort.
+> All 96 tests (93 Increment 1–4 plus 3 Lab Controller tests) and the full
+> production build pass. The
+> emulator-backed failure lifecycle is verified, and the paid two-scenario
+> live-model run passed on 2026-08-26. This document is retained as the
+> requirements and operational handoff; see `PROGRESS.md` for verification.
 
 Written 2026-08-26 for an agent picking this up cold.
 
@@ -12,9 +20,10 @@ and what will bite you.
 
 ## 1. Verified state right now
 
-Increments 1, 2 and 3 are complete and committed. **82 unit tests pass**
-(18 health-service, 25 layer-zero, 39 incident-service) — I ran them while
-writing this.
+Increments 1, 2 and 3 are complete. Increment 4 is complete. **96 unit tests
+pass** (18 health-service, 25 layer-zero, 39 incident-service, 11 agent-service,
+3 lab-controller), and the complete service plus Angular production build is
+green.
 
 | Increment | What it does | End-to-end test |
 |---|---|---|
@@ -22,17 +31,17 @@ writing this.
 | 2 | Layer 0 tails FRR logs → `networkLogs/` + 4 normalized event types | `./scripts/e2e-layer-zero.sh` (16 assertions) |
 | 3 | Correlates events → `incidents/` with a deterministic root cause | `./scripts/e2e-incidents.sh` (16 assertions, runs **both** fault scenarios) |
 
-There is also a read-only Angular NOC dashboard at `apps/web` (`npm run web`,
-<http://localhost:4200>), pulled forward from Increment 7 deliberately. It is
-the one intentional exception to "don't build future increments early".
+There is also an Angular operator visualizer at `apps/web` (`npm run web`,
+normally <http://localhost:4200>), pulled forward from Increment 7 deliberately.
+Its Firestore access is read-only; manual synthetic-lab buttons call the
+separate localhost-only Lab Controller, never the Agent Service.
+The active development server is currently on <http://localhost:4300> because
+port 4200 was already occupied by another project.
 
-**Branch:** `3-increment-3-incident-correlation`, 15 commits ahead of `main`,
-not merged, not pushed. Increment branches are stacked, each off the previous.
-Create `4-increment-4-claude-investigator` off this one.
+**Branch:** `4-increment-4-gpt-investigator`, stacked on the Increment 3 branch.
 
-**One uncommitted change:** `apps/web/angular.json` adds `"analytics": false`.
-Trivial — it suppresses the Angular CLI analytics prompt. Commit it or drop it,
-but don't leave it as a mystery.
+The pre-existing `apps/web/angular.json` change adds `"analytics": false` to
+suppress the Angular CLI analytics prompt; it is unrelated to the investigator.
 
 ### The headline result you must not regress
 
@@ -49,10 +58,11 @@ point of the whole project.
 
 ---
 
-## 2. The lab is currently BROKEN — fix it before you trust anything
+## 2. Host-reboot recovery trap — verify before trusting the lab
 
-Right now: containers are up, FRR kept its config, and the routers *look* fine.
-They are not. This is the documented reboot trap and it is live as I write:
+The lab was repaired during Increment 4, but a host reboot can leave containers
+up while removing the data-plane veths and host routes. In that state the
+routers *look* fine but are not:
 
 ```
 r1 interfaces:  lo + eth0 only   <-- eth1/eth2 (the containerlab veths) are GONE
@@ -105,7 +115,8 @@ curl -sf http://127.0.0.1:8080/ >/dev/null && echo "emulator UP"
 ps -eo pid,args | grep -E 'dist/index.js|tsx' | grep -v grep   # strays?
 ```
 
-The Firestore emulator is **currently down** — start it with `npm run emulators`.
+The Firestore emulator was running and verified during Increment 4. If it is
+not running in a later session, start it with `npm run emulators`.
 
 Note: there are two `ng serve` processes running (`IonBase_Web`, and one with
 `--configuration qa`). They belong to a **different project**, not this one.
@@ -115,7 +126,7 @@ Leave them alone.
 
 ## 3. What Increment 4 is
 
-> Claude as a **read-only investigator** over incidents that already exist.
+> GPT-5.6 Luna as a **read-only investigator** over incidents that already exist.
 
 It does **not** correlate (that is Increment 3, and it is deterministic on
 purpose) and it does **not** act (that is Increments 5 and 6, gated by a risk
@@ -146,11 +157,10 @@ reading of the evidence differs from the deterministic verdict, that is signal �
 either the rules need work or the agent is wrong, and both are worth surfacing.
 Do not design a flow where the agent can only rubber-stamp.
 
-### `agentRuns/` — the collection you will create
+### `agentRuns/` — the collection implemented by Increment 4
 
-It is listed in `docs/data-model.md` as Increment 4, written by the Agent
-Service, but **its shape is not yet specified**. That is your call. Design it so
-it answers, at minimum:
+It is specified in `docs/data-model.md` and written by the Agent Service. Its
+shape answers, at minimum:
 
 - which incident was investigated, and against which version of its diagnosis
 - what the agent concluded, and how confident it was
@@ -214,10 +224,10 @@ These are load-bearing decisions from `CLAUDE.md`. Do not undo them:
   take down monitoring. The agent service must not be able to stall or crash the
   Health Service, Layer 0, or the Incident Service. Catch everything; a failed
   run is a recorded failed run, not an exception that propagates.
-- **Never commit credentials.** The emulator needs none. The Anthropic API key
+- **Never commit credentials.** The emulator needs none. The OpenAI API key
   goes in a gitignored `.env` (`.env` and `.env.*` are already ignored, with
   `!.env.example` kept) and is documented in `services/agent-service/.env.example`
-  with a placeholder. `ANTHROPIC_API_KEY` is **not** currently set in the shell.
+  with a placeholder. `OPENAI_API_KEY` is **not** currently set in the shell.
 - **Cost and rate limits are real.** The lab can produce incidents faster than
   you want to pay for. Make runs deliberate — one per incident diagnosis, not
   one per event — and record token usage so the cost is visible rather than a
@@ -233,10 +243,11 @@ These are load-bearing decisions from `CLAUDE.md`. Do not undo them:
 
 ### Model selection
 
-Use a current model. **Load the `claude-api` skill before writing any API
-code** — it carries the current model ids, pricing, and parameters, and it is
-the documented trigger for exactly this situation. Do not hardcode a model id
-from memory.
+The selected model is `gpt-5.6-luna` through the OpenAI Responses API, with
+`reasoning.effort: low` and strict structured output. The model id, supported
+efforts, endpoint and pricing were checked against official OpenAI documentation
+through the `openai-docs` skill. The exact model and pricing snapshot are
+recorded on each run.
 
 ---
 
@@ -304,12 +315,13 @@ unit tests alone. Follow the existing pattern: `scripts/e2e-agent.sh` plus
 ## 8. Commands
 
 ```bash
-npm test                  # 82 unit tests across the three services
+npm test                  # 96 unit tests across five services
 npm run build             # tsc, all workspaces
 npm run emulators         # Firestore :8080, UI :4000
 npm run health-service    # Increment 1
 npm run layer-zero        # Increment 2
 npm run incident-service  # Increment 3
+npm run agent-service     # Increment 4 (needs OPENAI_API_KEY for successful runs)
 npm run web               # dashboard on :4200
 
 ./lab/deploy.sh                       # deploy + host routes (sudo only if missing)
@@ -322,6 +334,7 @@ npm run web               # dashboard on :4200
 ./scripts/e2e-test.sh         # Increment 1
 ./scripts/e2e-layer-zero.sh   # Increment 2
 ./scripts/e2e-incidents.sh    # Increment 3 (runs BOTH scenarios)
+./scripts/e2e-agent.sh        # Increment 4 (needs OPENAI_API_KEY)
 ```
 
 Topology: `PC1—R1—R2—R3—PC2`, FRR 10.2.1, OSPF area 0. Interface naming matters
@@ -333,11 +346,8 @@ increment lands, since those are what the next agent reads first.
 
 ---
 
-## 9. One correction to carry forward
+## 9. Documentation correction applied
 
-`CLAUDE.md` opens by saying the project is built "strictly in increments per
-`ACN_IMPLEMENTATION_PLAN.md`". **That file does not exist** — not in the working
-tree and not anywhere in git history. Increments 2 and 3 were scoped from
-`PROGRESS.md` instead, which has worked fine. Either add the plan or drop the
-reference; right now it sends every new agent looking for a file that was never
-there.
+`CLAUDE.md` previously pointed to a nonexistent `ACN_IMPLEMENTATION_PLAN.md`.
+That stale reference has been removed; `PROGRESS.md` is the authoritative
+increment status and scope record.

@@ -35,8 +35,8 @@ log evidence is what settles it.
 ## Correlation is deterministic, not an LLM
 
 The first implementation uses explicit rules: events within a time window, on
-topologically adjacent devices, collapse into one incident. Claude arrives in
-Increment 4 as an investigator over incidents that already exist.
+topologically adjacent devices, collapse into one incident. GPT-5.6 Luna
+arrives in Increment 4 as an investigator over incidents that already exist.
 
 An inference nobody can reproduce is not a baseline. Every conclusion here can
 be re-derived by hand from the stored events, and the incident records the

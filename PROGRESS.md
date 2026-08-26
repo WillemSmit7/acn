@@ -1,13 +1,13 @@
 # ACN Progress
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 | Increment | Scope | Status |
 |-----------|-------|--------|
 | **1** | Emulated network + Health Service + Firestore | **Complete — 15/15 criteria verified** |
 | **2** | Raw logs + Layer 0 normalization | **Complete — verified against a real link failure** |
 | **3** | Incident detection and correlation | **Complete — both fault scenarios told apart** |
-| 4 | Claude read-only investigation agent | Not started |
+| **4** | GPT-5.6 Luna read-only investigation agent | **Complete — real two-scenario live-model e2e passed** |
 | 5 | Controlled network actions | Not started |
 | 6 | Risk levels and approval workflow | Not started |
 | 7 | Angular NOC UI | Read-only dashboard pulled forward; auth still to do |
@@ -327,7 +327,7 @@ predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
 - `src/firebase/repository.ts` - `onSnapshot` on networkEvents, incidents keyed by incidentId
 - `tests/` - 39 unit tests
 
-`apps/web/` - Angular NOC dashboard, read-only live view (see below).
+`apps/web/` - Angular NOC dashboard, live telemetry/AI view with manual local-lab controls (see below).
 
 `scripts/e2e-incidents.sh`, `scripts/assert-incidents.mjs`,
 `scripts/lib/services.sh`.
@@ -377,15 +377,117 @@ predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
 | 7 | Correlation logic is unit tested | **Verified** — 39 tests on captured sequences |
 | 8 | Increments 1 and 2 unaffected | **Verified** — both e2e re-run green |
 
-## The NOC dashboard (`apps/web`)
+---
 
-Angular, read-only, live against the Firestore emulator on
+## Increment 4 — status
+
+Implemented on `4-increment-4-gpt-investigator`. The Agent Service watches
+settled `incidents/`, follows the complete evidence chain into normalized
+events and verbatim router logs, asks `gpt-5.6-luna` for an independent
+structured diagnosis, and writes the lifecycle and result to `agentRuns/`.
+
+This layer is read-only by construction: it has Firestore read access and one
+write target (`agentRuns/`), but no Docker, SSH, `vtysh`, Network Controller or
+action tool. GPT cannot remediate, and a model/API failure cannot affect the
+Health, Layer 0 or Incident services.
+
+### What was built
+
+`services/agent-service/`
+- Responses API client pinned to `gpt-5.6-luna`, `reasoning.effort: low`,
+  structured JSON output and `store: false`
+- one deterministic run id per incident diagnosis version, preventing
+  duplicate paid calls on listener replay or recovery events
+- live `collecting_evidence` -> `analyzing` -> `completed|failed` lifecycle
+- exact event/log references inspected, strict validation of model citations,
+  and server-computed agreement/disagreement
+- prompt/model/response id, token breakdown, latency, pricing snapshot and
+  estimated cost retained for reproducibility
+- API, timeout, output-validation and Firestore failures isolated per run
+
+`apps/web/`
+- live GPT investigator panel showing work in progress, baseline vs model
+  conclusion, agreement/disagreement, reasoning, usage and cost
+- expandable cited events that lead to the original raw device line
+- reproduction prompt available in the read-only detail view
+
+`scripts/e2e-agent.sh`, `scripts/assert-agent.mjs` — drives the two real fault
+scenarios and asserts the full evidence and accounting contract when an
+`OPENAI_API_KEY` is supplied.
+
+### Verification
+
+- 11 Agent Service unit tests use the real incident sequences and verbatim FRR
+  lines captured by Increments 2 and 3.
+- Tests cover request shape, strict structured response parsing, cost math,
+  evidence citations, agreement and disagreement, duplicate suppression, and
+  recording a model failure without throwing.
+- **96/96 tests pass**: 93 across Health, Layer 0, Incident and Agent services,
+  plus 3 Lab Controller safety/lifecycle tests.
+- The complete production build passes: all five strict TypeScript services
+  and the Angular dashboard.
+- The emulator-backed missing-key path was verified with an isolated real
+  Firestore fixture. It persisted a `failed` Luna run with low reasoning,
+  event/log evidence references, the full prompt, a completion timestamp and
+  the expected credential error, then shut down cleanly.
+- New shell and Node e2e/assertion scripts pass syntax checks; `git diff
+  --check` is clean.
+- The paid live-model e2e passed against both real lab scenarios on 2026-08-26:
+  Luna correctly identified the R2–R3 link failure and the R3 router failure,
+  agreed with both deterministic conclusions, cited real events and logs, and
+  recorded usage, latency and cost. No key is committed.
+
+## Acceptance criteria — Increment 4
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | `agentRuns/` document created per diagnosis | **Verified against the Firestore emulator** |
+| 2 | Inspected and cited event/log ids resolve | **Verified against both real scenarios** |
+| 3 | Conclusion stored beside baseline with agreement | **Verified — Luna agreed with both baselines** |
+| 4 | Both real fault scenarios produce different conclusions | **Verified against the live API** |
+| 5 | Token usage, latency and cost recorded | **Verified against the live API** |
+| 6 | API failure records a failed run without disturbing monitoring | **Verified against the Firestore emulator** |
+| 7 | Dashboard shows agent lifecycle and result live | **Verified; interactive visualizer implemented** |
+| 8 | No credentials committed | Verified |
+| 9 | Increments 1–3 remain green | **Verified — full 96-test regression suite passes** |
+
+### Operator visualizer update
+
+The dashboard now supports the complete human-driven demonstration without
+switching between terminals:
+
+- a timestamped live timeline merges health probes, raw FRR output, normalized
+  events, incident state, manual controller output and Luna's investigation
+- filters isolate problems, AI activity or raw device logs
+- buttons trigger the two predefined fault scenarios and network restore
+- `services/lab-controller` binds to `127.0.0.1:8787`, accepts no arbitrary
+  command/target parameters, refuses concurrent actions and audits output to
+  `labActions/`
+- the browser remains unable to write Firestore, and the Agent Service remains
+  unable to call the Lab Controller
+
+The real Restore route was invoked through the controller and verified in
+Firestore as `completed`, exit code 0, with six streamed output lines. The
+Angular production build and browser-SDK read of `labActions/` both pass.
+
+`npm run start:all` now owns the complete interactive startup lifecycle. It
+checks the key before touching the lab, builds, repairs/deploys the topology when
+needed, starts every component with separate retained logs, selects a safe
+dashboard port and cleans up its process groups and lock on Ctrl+C. A real
+no-cost startup/ready/shutdown cycle was verified; ports 8080, 8787 and 4200 all
+closed and the lock was removed after shutdown.
+
+## The operator visualizer (`apps/web`)
+
+Angular, live against the Firestore emulator on
 <http://localhost:4200> via `npm run web`.
 
-**This is Increment 7's UI pulled forward deliberately** and kept to a viewer -
-a correlation engine you cannot watch working is hard to trust. Authentication,
-per-user authorisation, incident acknowledgement and agent interaction remain
-Increment 7.
+**This is Increment 7's UI pulled forward deliberately** — a correlation engine
+you cannot watch working is hard to trust. It now includes a unified timeline
+for health checks, raw logs, events, incidents, controller actions and Luna, plus
+three manual synthetic-lab controls through a separate localhost-only service.
+Authentication, per-user authorisation, incident acknowledgement and
+operator-triggered agent interaction remain Increment 7.
 
 Answering the question that prompted it: **a real Firebase project was not
 needed.** A browser app connects to the emulator with the ordinary Firebase SDK,
@@ -394,10 +496,16 @@ a real project arrives in Increment 10 - and the repo stays credential-free with
 `reset-firestore.sh` still working.
 
 The one real blocker was `firebase/firestore.rules`, which denied all client
-access. Reads are now open for the five collections the dashboard renders;
+access. Reads are now open for the seven collections the dashboard renders;
 **client writes stay denied everywhere**, as do reads of the collections later
 increments add. That is safe only against a local emulator holding synthetic
 data, and the rules file says so loudly.
+
+The manual buttons do not weaken the Agent Service boundary. They call the
+separate `services/lab-controller` on `127.0.0.1:8787`, which maps exactly three
+named routes to existing lab scripts, refuses concurrent operations and writes
+its output to `labActions/`. It accepts no arbitrary command or target, and GPT
+has no connection to it.
 
 ## Known gaps and follow-ups
 
@@ -427,18 +535,8 @@ data, and the rules file says so loudly.
 
 ---
 
-## Starting Increment 4
+## Next: Increment 5
 
-**Handoff document: [docs/increment-4-handoff.md](docs/increment-4-handoff.md)** —
-current verified state, the lab's present condition, scope, constraints, traps
-and suggested acceptance criteria for whoever picks this up.
-
-Increment 4 introduces Claude as a **read-only investigator** over the incidents
-that already exist. It does not correlate and it does not act; it reads an
-incident, follows the evidence chain down to the raw log lines, and writes its
-reasoning to `agentRuns/`.
-
-Everything it needs is in place: incidents carry their events, events carry
-`sourceLogId`, and the deterministic diagnosis gives the agent something to
-agree or disagree with rather than a blank page. Keeping Increment 3's rules
-deterministic is what makes the agent's contribution measurable.
+Increment 5 introduces controlled network actions. Do not add them to the Agent
+Service early: the current GPT investigator must remain read-only until an
+explicit action contract and the Increment 6 risk/approval policy exist.

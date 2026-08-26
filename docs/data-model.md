@@ -1,7 +1,8 @@
 # ACN Firestore Data Model
 
 The database separates raw observations, normalized events, incidents, and AI
-activity. Increments 1 to 3 implement the first five collections; the rest are
+activity. Increments 1 to 4 and the operator visualizer implement the first
+seven collections; the rest are
 documented here so the shape is stable when their increment arrives.
 
 | Collection       | Status        | Written by       |
@@ -12,6 +13,7 @@ documented here so the shape is stable when their increment arrives.
 | `networkLogs`    | Increment 2   | Layer 0          |
 | `incidents`      | Increment 3   | Incident Service |
 | `agentRuns`      | Increment 4   | Agent Service    |
+| `labActions`     | Visualizer    | Lab Controller   |
 | `agentActions`   | Increment 5   | Agent Service    |
 | `networkChanges` | Increment 5   | Network Controller |
 
@@ -215,6 +217,118 @@ See `docs/incident-model.md` for the correlation and lifecycle rules.
 
 ---
 
+## `agentRuns/` — implemented
+
+One document per incident diagnosis version, written by the Agent Service. The
+document id is deterministic (`RUN-<incident>-<diagnosis hash>`), so repeated
+Firestore snapshots and service restarts cannot generate duplicate paid runs.
+A recovery event does not change the diagnosis version; only a changed
+deterministic root cause does.
+
+```json
+{
+  "runId": "RUN-INC-001-8D21A2C04F10",
+  "incidentId": "INC-001",
+  "diagnosisVersion": "<sha256 of the deterministic rootCause>",
+  "incidentStatus": "open",
+  "deterministicRootCause": {
+    "type": "link_failure",
+    "devices": ["r2", "r3"],
+    "summary": "R2 <-> R3 link failure",
+    "confidence": "confirmed"
+  },
+  "status": "completed",
+  "stage": "completed",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "low",
+  "promptVersion": "gpt-investigator-v1",
+  "prompt": {
+    "version": "gpt-investigator-v1",
+    "developer": "<read-only investigator policy>",
+    "input": "<exact incident and evidence JSON>"
+  },
+  "evidenceRefs": {
+    "eventIds": ["<every networkEvents document inspected>"],
+    "logIds": ["<every networkLogs document inspected>"]
+  },
+  "conclusion": {
+    "rootCauseType": "link_failure",
+    "rootCauseDevices": ["r2", "r3"],
+    "summary": "The R2-R3 link failed while both routers remained alive",
+    "confidence": "high",
+    "reasoning": ["Both endpoints independently logged the loss."],
+    "citedEventIds": ["<supporting event id>"],
+    "citedLogIds": ["<supporting raw log id>"]
+  },
+  "agreement": "agree",
+  "citedEvidence": {
+    "eventIds": ["<validated event ids>"],
+    "logIds": ["<validated log ids>"]
+  },
+  "responseId": "resp_...",
+  "responseModel": "gpt-5.6-luna",
+  "usage": {
+    "inputTokens": 2100,
+    "cachedInputTokens": 0,
+    "cacheWriteTokens": 0,
+    "outputTokens": 300,
+    "reasoningTokens": 120,
+    "totalTokens": 2400
+  },
+  "latencyMs": 1850,
+  "estimatedCostUsd": 0.00078,
+  "startedAt": "<server timestamp>",
+  "completedAt": "<server timestamp>",
+  "error": null
+}
+```
+
+The run is created as `status: running`, first in `collecting_evidence` and
+then `analyzing`, before the model responds. Those transitions let the NOC UI
+show the investigator working rather than only displaying a final answer.
+`completed` records the structured conclusion; `failed` records a safe error
+message. A missing/invalid key, timeout, rate limit, malformed output or
+Firestore failure is isolated to this service and cannot stop monitoring.
+
+`evidenceRefs` means evidence included in the prompt. `citedEvidence` is the
+smaller subset the model used to support its conclusion. Every cited id is
+validated against the supplied evidence before a run can complete. The
+`agreement` field is computed by the service from root-cause type and device
+set; the model cannot mark its own answer as agreeing.
+
+The exact prompt, model, reasoning effort, response id, token breakdown,
+latency, pricing snapshot and cost estimate are retained so a run can be
+reproduced, measured and argued with. API response storage is disabled.
+
+---
+
+## `labActions/` — implemented for the local visualizer
+
+One document per operator-triggered lab scenario. This is an audit and live
+display record for the synthetic lab, not an AI-proposed action.
+
+```json
+{
+  "actionId": "LAB-...",
+  "scenario": "link-failure",
+  "label": "Break R2–R3 link",
+  "status": "completed",
+  "output": ["==> Shutting down eth2 (to-r3) on R2", "..."],
+  "requestedAt": "<server timestamp>",
+  "startedAt": "<server timestamp>",
+  "completedAt": "<server timestamp>",
+  "exitCode": 0,
+  "error": null
+}
+```
+
+`status` is `running`, `completed` or `failed`. Output is capped to the latest
+100 lines. The controller accepts only `link-failure`, `router-failure` and
+`restore`; no request data becomes a command or script path.
+
+---
+
 ## Planned collections
 
 ### `agentActions/` — Increment 5
@@ -266,9 +380,9 @@ status over time.
 `firebase/firestore.rules` denies **all client writes**. Every write comes from
 a backend service using the Admin SDK, which bypasses rules.
 
-Client *reads* are open for the five collections the Increment 3 dashboard
-renders (`devices`, `healthChecks`, `networkLogs`, `networkEvents`,
-`incidents`). Collections belonging to later increments stay closed.
+Client *reads* are open for the seven collections the operator dashboard
+renders (`devices`, `healthChecks`, `networkLogs`, `networkEvents`, `incidents`,
+`agentRuns`, `labActions`). Collections belonging to later increments stay closed.
 
 That is safe only because the dashboard runs against a local emulator holding
 synthetic lab data, with no Firebase Auth yet. **This ruleset must not be

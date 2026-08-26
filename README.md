@@ -4,18 +4,19 @@ A testable network-operations environment where network data is collected,
 normalized, stored and — in later increments — reasoned about and acted on by
 an AI agent.
 
-**Current status: Increment 1 complete.** See [PROGRESS.md](PROGRESS.md).
+**Current status: Increments 1–4 complete, with a live operator visualizer.**
+See [PROGRESS.md](PROGRESS.md).
 
-Increment 1 is the first complete vertical slice:
+The current end-to-end path is:
 
 ```
-emulated network  ->  Health Service  ->  Firestore
+network -> health/log collection -> normalized events -> incidents
+        -> GPT-5.6 Luna investigation -> live NOC dashboard
 ```
 
-The system runs an emulated network, periodically checks device reachability,
-persists every check, detects healthy <-> down transitions, and records those
-transitions as network events. Nothing above that layer exists yet — no AI, no
-UI, no incident correlation.
+The AI layer is strictly read-only. It investigates incidents and records its
+reasoning, evidence citations, agreement, usage, latency and cost in
+`agentRuns/`; it has no network action capability.
 
 ---
 
@@ -49,6 +50,8 @@ lab script verifies Docker access up front and tells you this if it is missing.
 git clone <this-repo> acn && cd acn
 npm install
 cp services/health-service/.env.example services/health-service/.env
+cp services/agent-service/.env.example services/agent-service/.env
+# Put your OPENAI_API_KEY in the agent-service .env file.
 ```
 
 The default `.env` points at the local Firestore emulator. No credentials are
@@ -58,7 +61,38 @@ needed and none are stored in the repo.
 
 ## Running
 
-Five terminals. Increments 1-3 plus the dashboard.
+### One-command operator stack
+
+Once `OPENAI_API_KEY` is exported or saved in the gitignored
+`services/agent-service/.env`, run:
+
+```bash
+npm run start:all
+```
+
+This builds the project, verifies the lab and deploys a healthy baseline when
+needed, then starts Firestore, all telemetry/correlation/investigation services,
+the local Lab Controller and the Angular visualizer. It selects the first free
+dashboard port from 4200 upward, opens it when a desktop session is available,
+and prints every endpoint and log path.
+
+Keep that terminal open. Press **Ctrl+C** to stop every process the launcher
+started. Per-process logs remain under `.acn-runtime/logs/`.
+
+The first run after a reboot may ask for sudo only when `lab/deploy.sh` needs to
+restore the two host routes. Useful optional modes are listed by:
+
+```bash
+npm run start:all -- --help
+```
+
+In particular, `ACN_SKIP_AGENT=1 npm run start:all` starts the complete free
+stack without Luna.
+
+### Individual processes
+
+Run the lab, emulator, four telemetry/investigation services and the local lab
+controller in separate terminals; the dashboard is another process.
 
 **Terminal 1 — the emulated network**
 
@@ -96,7 +130,27 @@ npm run incident-service
 
 Correlates the event stream into `incidents/` with a probable root cause.
 
-**The NOC dashboard** (read-only live view of all of the above)
+**Terminal 6 — the Agent Service** (Increment 4)
+
+```bash
+npm run agent-service
+```
+
+Reads each settled incident and its raw evidence, asks `gpt-5.6-luna` for an
+independent structured diagnosis, and writes the run to `agentRuns/`. It never
+remediates or changes the network.
+
+**Terminal 7 — local lab controller**
+
+```bash
+npm run lab-controller   # localhost-only API on 127.0.0.1:8787
+```
+
+This powers three whitelisted dashboard buttons: break R2–R3, stop R3 and
+restore. It is a manual synthetic-lab harness, completely separate from Luna;
+the AI remains read-only.
+
+**The NOC dashboard** (live view and manual demo controls)
 
 ```bash
 npm run web              # http://localhost:4200
@@ -104,12 +158,14 @@ npm run web              # http://localhost:4200
 
 No real Firebase project is needed: the browser app talks to the Firestore
 emulator with the ordinary Firebase SDK, live `onSnapshot` listeners and all.
+The browser still has no Firestore write permission and cannot execute an
+arbitrary command. Buttons call only the localhost controller's named routes.
 
 ---
 
 ## Demonstration
 
-With all three running:
+With the telemetry stack running:
 
 ```
 [16:20:00] ACN Health Service starting
@@ -203,6 +259,22 @@ correlation is doing anything ICMP alone could not. It asserts one is diagnosed
 symptoms actually observed, and that every incident traces back through its
 events to raw log lines.
 
+For Increment 4, this creates both real incidents and has GPT-5.6 Luna
+investigate them. It is verified against the real lab and live API:
+
+```bash
+OPENAI_API_KEY=... ./scripts/e2e-agent.sh
+```
+
+It verifies that each run cites real events and raw logs, explicitly records
+agreement or disagreement with the deterministic diagnosis, distinguishes the
+two fault scenarios, and records model, prompt, tokens, latency and cost.
+
+For an interactive demonstration, keep all services running, open the NOC
+dashboard and use **Manual fault controls**. The **Live operations timeline**
+merges health checks, raw FRR lines, normalized events, incident correlation,
+controller output and Luna's current/final comment in timestamp order.
+
 ---
 
 ## The topology
@@ -265,12 +337,15 @@ Devices are configured in
 
 No credentials are committed. Against the emulator no credential is used at
 all; against real Firebase the service uses Application Default Credentials.
+`OPENAI_API_KEY` is server-side only and belongs in the gitignored
+`services/agent-service/.env`, never in `apps/web`.
 
 ---
 
 ## Development
 
 ```bash
+npm run start:all        # complete interactive operator stack
 npm test                 # unit tests
 npm run build            # compile TypeScript
 npm run lab:deploy       # same as ./lab/deploy.sh
@@ -291,9 +366,10 @@ acn/
 │   ├── health-service/      Increment 1 — ICMP checks -> Firestore
 │   ├── layer-zero/          Increment 2 — FRR logs -> networkLogs + networkEvents
 │   ├── incident-service/    Increment 3 — networkEvents -> incidents
-│   ├── agent-service/       Increment 4 (placeholder)
+│   ├── agent-service/       Increment 4 — GPT read-only investigation -> agentRuns
+│   ├── lab-controller/      Local manual demo controls -> labActions
 │   └── network-controller/  Increment 5 (placeholder)
-├── apps/web/                Angular NOC dashboard — read-only live view
+├── apps/web/                Angular NOC dashboard — live pipeline + lab controls
 ├── firebase/                Firestore rules and indexes
 ├── scripts/                 end-to-end test and helpers
 └── docs/                    architecture, data model, incident model

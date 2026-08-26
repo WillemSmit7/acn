@@ -1,21 +1,34 @@
 # ACN NOC dashboard
 
-Read-only live view of Increments 1 to 3, in Angular.
+Live operator view of Increments 1 to 4, in Angular.
+
+Start the complete stack with one command:
+
+```bash
+npm run start:all
+```
+
+The launcher chooses an available dashboard port, prints the resulting URL and
+keeps individual logs in `.acn-runtime/logs/`. Ctrl+C stops everything it
+started. The commands below remain useful for running components separately.
 
 ```bash
 npm run emulators        # Firestore on :8080
 npm run health-service   # ICMP -> devices, healthChecks, networkEvents
 npm run layer-zero       # FRR logs -> networkLogs, networkEvents
 npm run incident-service # networkEvents -> incidents
+npm run agent-service    # incidents + evidence -> agentRuns
+npm run lab-controller   # three whitelisted manual lab actions on :8787
 npm run web              # this app on http://localhost:4200
 ```
 
 ## Scope
 
-**This is pulled forward from Increment 7 deliberately, and kept small.** The
+**This is pulled forward from Increment 7 deliberately.** The
 full NOC UI — authentication, per-user authorisation, incident acknowledgement,
-agent interaction — is still Increment 7. What exists here is a viewer, added
-because a correlation engine you cannot watch working is hard to trust.
+and operator-triggered agent interaction — is still Increment 7. What exists
+here is a live viewer plus manual synthetic-lab fault controls, because a
+correlation engine you cannot watch working is hard to trust.
 
 It renders, top to bottom, the path the data takes:
 
@@ -23,9 +36,19 @@ It renders, top to bottom, the path the data takes:
   (`PC1—R1—R2—R3—PC2`), each showing its latest ICMP result. Laid out as the
   actual chain rather than an alphabetical list, so a partial outage is visible
   in place: break R2–R3 and the right-hand half goes red.
+- **Manual fault controls** — break R2–R3, stop R3 or restore the network through
+  a localhost-only controller. The browser can select a named scenario but
+  cannot supply a command, path, device or interface.
+- **Live operations timeline** — health checks, raw FRR lines, normalized
+  events, incident state, controller output and Luna results merged by time,
+  with problem, AI and raw-log filters.
 - **Incidents** — what the correlator concluded and why. Expanding one shows the
   verdict, the evidence in plain language, the predicted-vs-observed check, the
   symptoms, and every event behind it.
+- **GPT investigator** — the `collecting evidence` and `analyzing` lifecycle,
+  deterministic baseline beside Luna's conclusion, explicit agreement or
+  disagreement, reasoning, cited events and raw logs, tokens, latency, cost and
+  the exact reproduction prompt.
 - **Normalized events** — the live stream from both producers, tagged `ICMP` or
   `LOG` by which layer emitted it.
 
@@ -46,9 +69,12 @@ Connection settings are in [src/app/firebase.ts](src/app/firebase.ts).
 
 ## Security
 
-Strictly read-only. `firebase/firestore.rules` denies every client write —
-nothing in a browser has any business changing observed network state — and all
-writes come from backend services using the Admin SDK.
+Firestore access remains strictly read-only. `firebase/firestore.rules` denies
+every client write; all database writes come from backend services using the
+Admin SDK. Manual buttons call `127.0.0.1:8787`, whose three hard-coded routes
+map to repository-owned scenario scripts. The controller binds only to
+localhost, refuses concurrent actions and records its output in `labActions/`.
+It is separate from the Agent Service, so Luna still has no action capability.
 
 Reads are currently open, which is safe *only* because this runs against a
 local emulator holding synthetic lab data. **Those rules must not be deployed to

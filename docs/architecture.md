@@ -17,7 +17,7 @@ LAYER 0  (normalization)      <-- Increment 2 (built)
 INCIDENT DETECTION            <-- Increment 3 (built)
    |
    v
-AI AGENT                      <-- Increment 4 (read-only), 5 (actions)
+AI AGENT                      <-- Increment 4 (read-only, built), 5 (actions)
    |
    v
 CONTROLLED NETWORK ACTIONS    <-- Increment 5, gated by risk policy in 6
@@ -26,7 +26,7 @@ CONTROLLED NETWORK ACTIONS    <-- Increment 5, gated by risk policy in 6
 AUDIT + VERIFICATION
 ```
 
-## What exists today (Increments 1-3)
+## What exists today (Increments 1-4)
 
 ```
 +------------------------------------------------------------------+
@@ -47,14 +47,24 @@ AUDIT + VERIFICATION
 |               v                             v                    |
 |  +--------------------------------------------------------+      |
 |  |         Firebase Emulator Suite - Firestore            |      |
-|  |  devices/ healthChecks/ networkLogs/ networkEvents/    |      |
+|  | devices/ healthChecks/ networkLogs/ networkEvents/     |      |
+|  | incidents/ agentRuns/ labActions/                      |      |
 |  +---------------+--------------------------+-------------+      |
 |                  |  watches networkEvents   |  reads             |
 |                  v                          v                    |
 |  +--------------------------+   +---------------------------+    |
 |  |     Incident Service     |   |    NOC dashboard (web)    |    |
 |  |  correlate -> incidents/ |   |  Angular, read-only, live |    |
-|  +--------------------------+   +---------------------------+    |
+|  +------------+-------------+   +---------------------------+    |
+|               | reads incident + evidence                         |
+|               v                                                   |
+|  +--------------------------+                                     |
+|  |       Agent Service      |  GPT-5.6 Luna, low reasoning       |
+|  |  read-only -> agentRuns/ |  no network/action capability      |
+|  +--------------------------+                                     |
+|                                                                  |
+|  Browser --named action--> Lab Controller --fixed script--> Lab  |
+|             127.0.0.1 only; output -> labActions/                |
 +------------------------------------------------------------------+
 ```
 
@@ -64,8 +74,24 @@ correlates a device going unreachable (ICMP) with the interface and adjacency
 events the routers logged at the same moment, which it can only do because both
 are in one stream on a common `deviceId`.
 
-The dashboard reads; it never writes. Every write in the system comes from a
-backend service using the Admin SDK.
+The dashboard never writes Firestore. Every database write comes from a backend
+service using the Admin SDK. Its manual demo buttons call the separate local
+Lab Controller, not the Agent Service.
+
+The Agent Service watches settled diagnoses, follows `eventIds` into
+`networkEvents/` and `sourceLogId` into the untouched `networkLogs/` text, then
+calls the OpenAI Responses API with `gpt-5.6-luna`. Its only write is the
+investigation record in `agentRuns/`. It owns no Docker, SSH, `vtysh`, network
+controller or remediation interface, so the Increment 4 read-only boundary is
+structural rather than merely a prompt instruction.
+
+The Lab Controller is deliberately outside that path. It binds to
+`127.0.0.1`, exposes only three named routes, maps them to repository-owned lab
+scenario scripts and records lifecycle/output in `labActions/`. It accepts no
+command, path, device or interface parameters and refuses overlapping actions.
+This gives a human an interactive demo harness without giving GPT an action
+tool. It is not the general Network Controller planned for Increment 5 and has
+no production authority model.
 
 ## Why the Health Service pings loopbacks, not management addresses
 
@@ -115,6 +141,11 @@ enforced structurally:
 - `HealthService.tick` has a final catch, so no round can kill the timer.
 - Overlapping rounds are skipped, never queued, so a slow network cannot
   cause unbounded concurrency.
+- The Agent Service is a separate process above incident detection. API or
+  Firestore failures are caught per run and written as `status: failed` where
+  possible; they cannot propagate into the three monitoring services.
+- Investigations run one at a time and use deterministic run ids, preventing
+  event bursts or listener replays from multiplying paid API calls.
 
 ## Why Layer 0 reads log files through Docker
 
@@ -148,8 +179,9 @@ failure for exactly that reason.
 
 ## Why correlation is deterministic
 
-Increment 3 uses explicit rules, not an LLM, and Claude does not appear until
-Increment 4. An inference nobody can reproduce is not a baseline to improve on.
+Increment 3 uses explicit rules, not an LLM. GPT-5.6 Luna appears only in
+Increment 4, after the incident already exists. An inference nobody can
+reproduce is not a baseline to improve on.
 
 The rules turn on one question — did the far end of the link corroborate? — and
 every conclusion records its evidence in plain language plus a check of what it
@@ -165,9 +197,10 @@ re-checks that every round and it is therefore self-correcting.
 
 ## The UI, and why the emulator is not a limitation
 
-The NOC dashboard (`apps/web`) is pulled forward from Increment 7 deliberately
-and kept to a read-only viewer: a correlation engine you cannot watch working is
-hard to trust.
+The NOC dashboard (`apps/web`) is pulled forward from Increment 7 deliberately:
+a correlation engine you cannot watch working is hard to trust. Its Firestore
+connection remains read-only; the only controls are local synthetic-lab
+scenarios routed through the narrow Lab Controller described above.
 
 It connects to the Firestore **emulator** with the ordinary Firebase JS SDK -
 same queries, same live `onSnapshot` listeners it would use against a real
@@ -176,15 +209,26 @@ about the UI changes when one arrives in Increment 10. The repo stays free of
 credentials and `./scripts/reset-firestore.sh` keeps working.
 
 The one thing that did have to change is `firebase/firestore.rules`, which
-denied all client access. Reads are now open for the five collections the
+denied all client access. Reads are now open for the seven collections the
 dashboard renders; writes stay denied everywhere, as do reads of the
 collections later increments add. That is safe only against a local emulator
 holding synthetic data — see the warning in the rules file.
 
+The Increment 4 view shows `collecting evidence` and `analyzing` stages live,
+then places the deterministic baseline next to the GPT conclusion. It exposes
+agreement or disagreement, tokens, latency, estimated cost, the reproduction
+prompt and expandable citations back to raw device output.
+
+The operator timeline merges recent health probes, raw FRR lines, normalized
+events, incident state, lab action output and agent state by timestamp. This is
+computed in the browser from existing source-of-truth collections; it does not
+duplicate telemetry into a second activity collection.
+
 ## Deferred deliberately
 
-No message bus, no Neo4j, no BigQuery, no Cloud Functions, no Angular app, no
-Claude integration. Each arrives in the increment that needs it.
+No message bus, Neo4j, BigQuery, Cloud Functions, network action interface or
+risk-policy infrastructure exists yet. Each arrives only in the increment that
+needs it.
 
 Layer 0 also has no incident concept: it emits events and stops there. Deciding
 that an `interface_down` on r2 and a `device_unreachable` for r3 and pc2 are one

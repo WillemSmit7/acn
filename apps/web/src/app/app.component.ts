@@ -4,19 +4,28 @@ import { emulatorLabel } from './firebase';
 import { TopologyStripComponent } from './components/topology-strip.component';
 import { IncidentDetailComponent } from './components/incident-detail.component';
 import { EventFeedComponent } from './components/event-feed.component';
+import { AgentRunsComponent } from './components/agent-runs.component';
+import { OperationsConsoleComponent } from './components/operations-console.component';
 import type { Incident } from './models';
 
 /**
- * ACN NOC dashboard - a read-only live view of Increments 1 to 3.
+ * ACN NOC dashboard - live view of the telemetry and AI investigation pipeline.
  *
  * Top to bottom it follows the same path the data takes: the network, the
  * events normalized out of it, and the incidents correlated from those. Nothing
- * here can change the network; every write comes from a backend service.
+ * Manual demo controls call a separate localhost-only controller with three
+ * whitelisted lab scenarios; the browser still has no Firestore write access.
  */
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [TopologyStripComponent, IncidentDetailComponent, EventFeedComponent],
+  imports: [
+    TopologyStripComponent,
+    IncidentDetailComponent,
+    AgentRunsComponent,
+    OperationsConsoleComponent,
+    EventFeedComponent,
+  ],
   template: `
     <header>
       <div class="brand">
@@ -48,6 +57,24 @@ import type { Incident } from './models';
             <code>npm run health-service</code>
           </p>
         }
+      </section>
+
+      <section class="card operations">
+        <acn-operations-console
+          [healthChecks]="data.healthChecks()"
+          [events]="data.events()"
+          [logs]="data.logs()"
+          [incidents]="data.incidents()"
+          [agentRuns]="data.agentRuns()"
+          [actions]="data.labActions()" />
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>GPT investigator</h2>
+          <span class="count">{{ data.agentRuns().length }} recent run(s)</span>
+        </div>
+        <acn-agent-runs [runs]="data.agentRuns()" />
       </section>
 
       <section class="card">

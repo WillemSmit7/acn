@@ -1,22 +1,24 @@
 # ACN — AI-Centered Network
 
 Network-operations environment: collect network data, normalize it, store it,
-and eventually let an AI agent investigate and remediate. Built strictly in
-increments per `ACN_IMPLEMENTATION_PLAN.md`.
+and eventually let an AI agent investigate and remediate. Built incrementally,
+with `PROGRESS.md` as the authoritative status and scope record.
 
 **Read `PROGRESS.md` first** — it is the authoritative status record. This file
 holds the durable context and the traps that cost real time.
 
 ---
 
-## Current state: Increments 1, 2 and 3 complete
+## Current state: Increments 1–4 complete; operator visualizer implemented
 
-Three end-to-end tests pass against the real lab:
+All four end-to-end tests pass against the real lab, including two live
+GPT-5.6 Luna investigations:
 
 ```bash
 ./scripts/e2e-test.sh         # Increment 1 - ICMP -> Firestore, 8 assertions
 ./scripts/e2e-layer-zero.sh   # Increment 2 - FRR logs -> events, 16 assertions
 ./scripts/e2e-incidents.sh    # Increment 3 - events -> incidents, 16 assertions
+./scripts/e2e-agent.sh        # Increment 4 - incidents + raw evidence -> agentRuns
 ```
 
 Increment 1: ICMP health checks -> `device_unreachable` / `device_recovered`.
@@ -27,13 +29,27 @@ deterministic root cause. **It tells a link failure apart from a router failure
 even though both produce identical ICMP symptoms** — that is the headline
 result; do not regress it.
 
-There is also a read-only Angular NOC dashboard (`apps/web`, `npm run web`,
-<http://localhost:4200>) pulled forward from Increment 7 deliberately.
+Increment 4: the Agent Service reads settled incidents and their complete
+event/log evidence chain, calls `gpt-5.6-luna` with low reasoning through the
+Responses API, and records its lifecycle, independent conclusion, citations,
+agreement, usage, latency and cost in `agentRuns/`. It is read-only by
+construction and has no network/action capability. Unit/build verification is
+green; the paid two-scenario e2e passed on 2026-08-26 with one link-failure and
+one router-failure conclusion, both agreeing with the deterministic baseline.
+
+There is also an Angular NOC dashboard (`apps/web`, `npm run web`,
+<http://localhost:4200>) with a unified live pipeline timeline and manual lab
+fault buttons. Firestore access is read-only. Buttons call the separate
+localhost-only `services/lab-controller`, which accepts exactly three named
+synthetic-lab scenarios and writes their audit/output records to `labActions/`.
+It is not connected to GPT and is not the future general Network Controller.
 
 ### The next action
 
-Increment 4 — Claude as a read-only investigator over existing incidents.
-**Start with `docs/increment-4-handoff.md`**, then PROGRESS.md.
+Use the operator visualizer to demonstrate the complete loop. Increment 5's
+controlled-action design is still next; do not mistake the three hard-coded
+manual lab scenarios for AI action authority or add actions to the investigator
+before the risk/approval boundary exists.
 
 Verify what is actually running before assuming anything:
 
@@ -182,8 +198,15 @@ without re-parsing history, and remediation in the correlator would skip the
 risk policy Increments 5 and 6 exist to provide.
 
 **Correlation is deterministic, and must stay that way.** No LLM in Increment 3;
-Claude enters in Increment 4 over incidents that already exist. An inference
+GPT-5.6 Luna enters in Increment 4 over incidents that already exist. An inference
 nobody can reproduce is not a baseline to improve on.
+
+**The Increment 4 agent is structurally read-only.** It reads incidents,
+events and raw logs and writes only `agentRuns/`. It owns no Docker, SSH,
+`vtysh`, controller or action tool. Each diagnosis version gets one
+deterministic run id, so listener replays and recovery events cannot multiply
+paid calls. API failures become failed run records and never propagate into
+monitoring.
 
 **The link-vs-device discriminator is: did the far end corroborate?** Both ends
 reporting means both devices are alive and the link is not. One end reporting
@@ -205,11 +228,13 @@ which the Health Service re-checks every round and is therefore self-correcting.
 restored r3 exonerate itself, turning a correct device failure into a
 "confirmed link failure". Only events before the first recovery are evidence.
 
-**The dashboard is read-only and emulator-only.** Client writes are denied
-everywhere; reads are open for the five displayed collections. `allow read: if
-true` must become per-user auth before any real deployment (Increment 7). A
-browser app talks to the emulator with the ordinary Firebase SDK — a real
-Firebase project was never needed for a local UI.
+**The dashboard's Firestore access is read-only and emulator-only.** Client
+writes are denied everywhere; reads are open for the seven displayed
+collections. `allow read: if true` must become per-user auth before any real
+deployment (Increment 7). Manual lab buttons call a separate localhost-only
+controller with fixed scenario routes; they are not Firestore writes and do not
+give GPT action authority. A browser app talks to the emulator with the ordinary
+Firebase SDK — a real Firebase project was never needed for a local UI.
 
 ---
 
@@ -220,18 +245,23 @@ lab/        topology.clab.yml, FRR configs, scenarios, lib/docker.sh
 services/health-service/   Increment 1 — ICMP -> Firestore
 services/layer-zero/       Increment 2 — FRR logs -> networkLogs + networkEvents
 services/incident-service/ Increment 3 — networkEvents -> incidents
-apps/web/                  Angular NOC dashboard (read-only, live)
+services/agent-service/    Increment 4 — GPT investigation -> agentRuns
+services/lab-controller/   Manual local-lab scenarios -> labActions
+apps/web/                  Angular operator visualizer (live pipeline + controls)
 firebase/   rules + indexes      scripts/  e2e test, assertions, reset
 docs/       architecture.md, data-model.md, incident-model.md
 ```
 
 ```bash
-npm test                  # 82 unit tests across the three services
+npm run start:all        # complete local stack; Ctrl+C owns cleanup
+npm test                  # unit tests across telemetry, agent and lab controller
 npm run build             # tsc
 npm run emulators         # Firestore :8080, UI :4000
 npm run health-service    # Increment 1 service
 npm run layer-zero        # Increment 2 service
 npm run incident-service  # Increment 3 service
+npm run agent-service     # Increment 4 service (needs OPENAI_API_KEY for success)
+npm run lab-controller    # localhost-only manual lab control API on :8787
 npm run web               # NOC dashboard on :4200
 ./lab/deploy.sh           # deploy + host routes (sudo only if routes missing)
 ./lab/verify.sh           # connectivity proof
@@ -240,8 +270,16 @@ npm run web               # NOC dashboard on :4200
 ./scripts/reset-firestore.sh          # wipe emulator
 ./scripts/e2e-layer-zero.sh           # Increment 2 end-to-end
 ./scripts/e2e-incidents.sh            # Increment 3 end-to-end (runs BOTH scenarios)
+./scripts/e2e-agent.sh                # Increment 4 end-to-end (uses GPT-5.6 Luna)
 ./lab/destroy.sh          # tear down + remove routes
 ```
+
+`scripts/start-all.sh` is the preferred interactive launcher. It requires a key
+from the shell or `services/agent-service/.env` unless `ACN_SKIP_AGENT=1`,
+verifies/deploys the lab, reuses no unrelated ports, runs built single-process
+backend artifacts, records logs under `.acn-runtime/`, and kills only the
+process groups it started on Ctrl+C. Do not replace it with concurrent npm
+wrappers that orphan child processes.
 
 Topology: `PC1—R1—R2—R3—PC2`, FRR 10.2.1, OSPF area 0. Interface naming matters
 — `r2:eth2` faces r3. Addressing table is in `README.md`.
@@ -253,11 +291,12 @@ Topology: `PC1—R1—R2—R3—PC2`, FRR 10.2.1, OSPF area 0. Interface naming 
 - TypeScript `strict` + `noUncheckedIndexedAccess`. Keep it clean.
 - Small, testable commits; conventional-commit prefixes.
 - **Work on the feature branch, not `main`.** Current:
-  `1-increment-1-emulated-network-health-service-firestore`. Remote:
+  `4-increment-4-gpt-investigator`. Remote:
   `WillemSmit7/acn` (private).
-- Never commit credentials. Emulator needs none; production uses ADC.
+- Never commit credentials. Emulator needs none; production uses ADC. The
+  OpenAI key belongs only in `services/agent-service/.env`, never `apps/web`.
 - Do not build future increments' infrastructure early. Placeholder READMEs in
-  `services/agent-service` and `network-controller` are intentional. `apps/web`
+  `network-controller` are intentional. `apps/web`
   is the one deliberate exception, pulled forward and kept to a viewer.
 - Parser fixtures must be lines copied verbatim from the running lab. Parsers
   written against imagined log formats pass their tests and fail in production.

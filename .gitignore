@@ -31,3 +31,6 @@ clab-*/
 
 # FRR logs written into the lab by the routers (bind-mounted, runtime only).
 lab/logs/
+
+# Local one-command stack launcher state and logs.
+.acn-runtime/

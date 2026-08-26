@@ -11,10 +11,13 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type {
+  AgentConclusion,
+  AgentRun,
   Device,
   DeviceState,
   HealthCheck,
   Incident,
+  LabAction,
   NetworkEvent,
   NetworkLog,
   RootCause,
@@ -36,6 +39,8 @@ export class DataService {
   readonly healthChecks = signal<HealthCheck[]>([]);
   readonly events = signal<NetworkEvent[]>([]);
   readonly incidents = signal<Incident[]>([]);
+  readonly agentRuns = signal<AgentRun[]>([]);
+  readonly labActions = signal<LabAction[]>([]);
   readonly logs = signal<NetworkLog[]>([]);
   readonly connected = signal(false);
   readonly error = signal<string | null>(null);
@@ -99,6 +104,16 @@ export class DataService {
     );
 
     this.listen(
+      query(collection(store, 'agentRuns'), orderBy('startedAt', 'desc'), limit(50)),
+      (docs) => this.agentRuns.set(docs.map(toAgentRun)),
+    );
+
+    this.listen(
+      query(collection(store, 'labActions'), orderBy('requestedAt', 'desc'), limit(50)),
+      (docs) => this.labActions.set(docs.map(toLabAction)),
+    );
+
+    this.listen(
       query(collection(store, 'networkLogs'), orderBy('receivedAt', 'desc'), limit(300)),
       (docs) => this.logs.set(docs.map(toLog)),
     );
@@ -108,6 +123,10 @@ export class DataService {
   logFor(sourceLogId: string | null): NetworkLog | undefined {
     if (sourceLogId === null) return undefined;
     return this.logs().find((log) => log.id === sourceLogId);
+  }
+
+  eventFor(eventId: string): NetworkEvent | undefined {
+    return this.events().find((event) => event.id === eventId);
   }
 
   eventsFor(incident: Incident): NetworkEvent[] {
@@ -234,4 +253,111 @@ function toIncident({ id, data }: { id: string; data: DocumentData }): Incident 
     eventIds: strArray(data['eventIds']),
     eventCount: typeof data['eventCount'] === 'number' ? data['eventCount'] : 0,
   };
+}
+
+function toAgentRun({ id, data }: { id: string; data: DocumentData }): AgentRun {
+  const status = str(data['status'], 'running');
+  const stage = str(data['stage'], 'collecting_evidence');
+  const agreement = str(data['agreement']);
+  const evidenceRefs = object(data['evidenceRefs']);
+  const citedEvidence = object(data['citedEvidence']);
+  const usage = object(data['usage']);
+  const error = object(data['error']);
+  const prompt = object(data['prompt']);
+
+  return {
+    id,
+    runId: str(data['runId'], id),
+    incidentId: str(data['incidentId']),
+    diagnosisVersion: str(data['diagnosisVersion']),
+    status: status === 'completed' || status === 'failed' ? status : 'running',
+    stage:
+      stage === 'analyzing' || stage === 'completed' || stage === 'failed'
+        ? stage
+        : 'collecting_evidence',
+    provider: 'openai',
+    model: str(data['model']),
+    reasoningEffort: str(data['reasoningEffort']),
+    deterministicRootCause: toRootCause(data['deterministicRootCause']),
+    conclusion: toAgentConclusion(data['conclusion']),
+    agreement: agreement === 'agree' || agreement === 'disagree' ? agreement : null,
+    evidenceEventIds: strArray(evidenceRefs['eventIds']),
+    evidenceLogIds: strArray(evidenceRefs['logIds']),
+    citedEventIds: strArray(citedEvidence['eventIds']),
+    citedLogIds: strArray(citedEvidence['logIds']),
+    promptVersion: str(data['promptVersion']),
+    prompt: Object.keys(prompt).length === 0 ? null : {
+      developer: str(prompt['developer']),
+      input: str(prompt['input']),
+      version: str(prompt['version']),
+    },
+    inputTokens: count(usage['inputTokens']),
+    outputTokens: count(usage['outputTokens']),
+    reasoningTokens: count(usage['reasoningTokens']),
+    totalTokens: count(usage['totalTokens']),
+    latencyMs: typeof data['latencyMs'] === 'number' ? data['latencyMs'] : null,
+    estimatedCostUsd:
+      typeof data['estimatedCostUsd'] === 'number' ? data['estimatedCostUsd'] : null,
+    error: typeof error['message'] === 'string' ? error['message'] : null,
+    startedAt: toDate(data['startedAt']),
+    completedAt: toDate(data['completedAt']),
+  };
+}
+
+function toLabAction({ id, data }: { id: string; data: DocumentData }): LabAction {
+  const scenario = str(data['scenario']);
+  const status = str(data['status'], 'running');
+  return {
+    id,
+    actionId: str(data['actionId'], id),
+    scenario:
+      scenario === 'router-failure' || scenario === 'restore' ? scenario : 'link-failure',
+    label: str(data['label'], scenario),
+    status: status === 'completed' || status === 'failed' ? status : 'running',
+    output: strArray(data['output']),
+    exitCode: typeof data['exitCode'] === 'number' ? data['exitCode'] : null,
+    error: typeof data['error'] === 'string' ? data['error'] : null,
+    requestedAt: toDate(data['requestedAt']),
+    completedAt: toDate(data['completedAt']),
+  };
+}
+
+function toRootCause(value: unknown): RootCause | null {
+  const raw = object(value);
+  if (Object.keys(raw).length === 0) return null;
+  return {
+    type: str(raw['type'], 'unknown') as RootCause['type'],
+    devices: strArray(raw['devices']),
+    summary: str(raw['summary']),
+    confidence: str(raw['confidence'], 'unknown') as RootCause['confidence'],
+    evidence: strArray(raw['evidence']),
+    predictedUnreachable: strArray(raw['predictedUnreachable']),
+    observedUnreachable: strArray(raw['observedUnreachable']),
+    predictionMatches: raw['predictionMatches'] === true,
+  };
+}
+
+function toAgentConclusion(value: unknown): AgentConclusion | null {
+  const raw = object(value);
+  if (Object.keys(raw).length === 0) return null;
+  const type = str(raw['rootCauseType'], 'unknown');
+  const confidence = str(raw['confidence'], 'low');
+  return {
+    rootCauseType:
+      type === 'link_failure' || type === 'device_failure' ? type : 'unknown',
+    rootCauseDevices: strArray(raw['rootCauseDevices']),
+    summary: str(raw['summary']),
+    confidence: confidence === 'high' || confidence === 'medium' ? confidence : 'low',
+    reasoning: strArray(raw['reasoning']),
+    citedEventIds: strArray(raw['citedEventIds']),
+    citedLogIds: strArray(raw['citedLogIds']),
+  };
+}
+
+function object(value: unknown): DocumentData {
+  return typeof value === 'object' && value !== null ? value as DocumentData : {};
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
 }
