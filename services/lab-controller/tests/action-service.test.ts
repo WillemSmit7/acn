@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ActionBusyError, LabActionService } from '../src/action-service.js';
+import { SCENARIOS } from '../src/scenarios.js';
 import type { ActionRepositoryPort, LabAction, ScenarioRunnerPort } from '../src/types.js';
 
 class FakeRepository implements ActionRepositoryPort {
@@ -11,23 +12,35 @@ class FakeRepository implements ActionRepositoryPort {
   async finish(action: LabAction): Promise<void> { this.finished.push(copy(action)); }
 }
 
+test('exposes exactly the five ISP failures plus restore', () => {
+  assert.deepEqual(Object.keys(SCENARIOS), [
+    'configuration-drift',
+    'routing-session-failure',
+    'interface-disabled',
+    'routing-service-crash',
+    'resource-exhaustion',
+    'restore',
+  ]);
+  assert.ok(!Object.keys(SCENARIOS).includes('router-failure'));
+});
+
 test('runs only a whitelisted scenario and records its streamed output', async () => {
   const repository = new FakeRepository();
   const runner: ScenarioRunnerPort = {
     async run(scenario, onLine) {
-      assert.match(scenario.scriptPath, /01-link-failure\.sh$/);
-      await onLine('interface eth2 down');
+      assert.match(scenario.scriptPath, /01-configuration-drift\.sh$/);
+      await onLine('configuration drift detected');
       return 0;
     },
     stop() {},
   };
   const service = new LabActionService(repository, runner, () => undefined);
 
-  const action = await service.trigger('link-failure');
+  const action = await service.trigger('configuration-drift');
   await service.stop();
 
   assert.equal(action.status, 'completed');
-  assert.deepEqual(action.output, ['interface eth2 down']);
+  assert.deepEqual(action.output, ['configuration drift detected']);
   assert.equal(repository.created.length, 1);
   assert.equal(repository.finished[0]?.status, 'completed');
 });
@@ -40,7 +53,7 @@ test('rejects a second action while one is running', async () => {
   };
   const service = new LabActionService(new FakeRepository(), runner, () => undefined);
 
-  await service.trigger('router-failure');
+  await service.trigger('routing-service-crash');
   await assert.rejects(() => service.trigger('restore'), ActionBusyError);
   release?.();
   await service.stop();

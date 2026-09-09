@@ -50,7 +50,7 @@ echo "==> Clearing previous emulator data"
 ./scripts/reset-firestore.sh
 
 echo "==> Restoring the lab to a healthy baseline"
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 
 echo "==> Starting Layer 0"
 LAYER_ZERO_PID="$(acn_start_service services/layer-zero/dist/index.js "${LAYER_ZERO_LOG}")"
@@ -68,11 +68,11 @@ echo "==> Collecting a healthy baseline"
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 2 + 5 ))
 
 echo "==> Breaking the R2 <-> R3 link"
-./lab/scenarios/01-link-failure.sh
+./lab/scenarios/03-interface-disabled.sh
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 3 ))
 
 echo "==> Restoring the network"
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 # OSPF needs longer to re-establish an adjacency than ICMP needs to recover, so
 # this wait is deliberately more generous than the Increment 1 test's.
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 4 ))

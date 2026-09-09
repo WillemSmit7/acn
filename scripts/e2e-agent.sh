@@ -36,8 +36,8 @@ AGENT_PID="$(acn_start_service services/agent-service/dist/index.js "${AGENT_LOG
 sleep 2
 acn_require_alive "Agent Service" "${AGENT_PID}" "${AGENT_LOG}"
 
-echo "==> Waiting for two investigations"
-node scripts/wait-agent-runs.mjs 2 120000
+echo "==> Waiting for five investigations"
+node scripts/wait-agent-runs.mjs 5 180000
 cleanup
 
 echo

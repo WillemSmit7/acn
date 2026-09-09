@@ -10,6 +10,11 @@ export const FAULT_EVENTS = [
   'device_unreachable',
   'interface_down',
   'ospf_neighbor_down',
+  'configuration_drift',
+  'routing_session_down',
+  'interface_admin_down',
+  'routing_service_down',
+  'resource_exhaustion',
 ] as const;
 
 /** Event types that indicate something came back. */
@@ -17,6 +22,11 @@ export const RECOVERY_EVENTS = [
   'device_recovered',
   'interface_up',
   'ospf_neighbor_up',
+  'configuration_restored',
+  'routing_session_up',
+  'interface_admin_up',
+  'routing_service_up',
+  'resource_recovered',
 ] as const;
 
 export type FaultEventType = (typeof FAULT_EVENTS)[number];
@@ -38,7 +48,16 @@ export interface ObservedEvent {
   occurredAt: Date;
 }
 
-export type RootCauseType = 'link_failure' | 'device_failure' | 'unknown' | 'analyzing';
+export type RootCauseType =
+  | 'configuration_drift'
+  | 'routing_session_failure'
+  | 'interface_misconfiguration'
+  | 'routing_service_failure'
+  | 'resource_exhaustion'
+  | 'link_failure'
+  | 'device_failure'
+  | 'unknown'
+  | 'analyzing';
 
 /**
  * How much the evidence supports the conclusion.
@@ -107,6 +126,16 @@ export function faultForRecovery(eventType: string): FaultEventType | null {
       return 'interface_down';
     case 'ospf_neighbor_up':
       return 'ospf_neighbor_down';
+    case 'configuration_restored':
+      return 'configuration_drift';
+    case 'routing_session_up':
+      return 'routing_session_down';
+    case 'interface_admin_up':
+      return 'interface_admin_down';
+    case 'routing_service_up':
+      return 'routing_service_down';
+    case 'resource_recovered':
+      return 'resource_exhaustion';
     default:
       return null;
   }

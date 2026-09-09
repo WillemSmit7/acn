@@ -33,7 +33,7 @@ test('prompt contains the baseline, exact event ids and verbatim raw logs', () =
 test('agreement is based on root-cause type and device set, not wording or order', () => {
   assert.equal(agrees(linkIncident, agreeingConclusion), true);
   assert.equal(
-    agrees(linkIncident, { ...agreeingConclusion, rootCauseType: 'device_failure' }),
+    agrees(linkIncident, { ...agreeingConclusion, rootCauseType: 'routing_service_failure' }),
     false,
   );
 });

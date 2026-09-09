@@ -17,7 +17,7 @@ export const linkIncident: InvestigableIncident = {
   affectedDevices: ['pc2', 'r2', 'r3'],
   eventIds: ['evt-r2-if', 'evt-r2-ospf', 'evt-r3-if', 'evt-r3-ospf', 'evt-r3-icmp', 'evt-pc2-icmp'],
   rootCause: {
-    type: 'link_failure',
+    type: 'interface_misconfiguration',
     devices: ['r2', 'r3'],
     summary: 'R2 <-> R3 link failure',
     confidence: 'confirmed',
@@ -76,7 +76,7 @@ export const linkEvidence: EvidenceBundle = {
 };
 
 export const agreeingConclusion: AgentConclusion = {
-  rootCauseType: 'link_failure',
+  rootCauseType: 'interface_misconfiguration',
   rootCauseDevices: ['r3', 'r2'],
   summary: 'The R2-R3 link failed while both routers remained alive',
   confidence: 'high',

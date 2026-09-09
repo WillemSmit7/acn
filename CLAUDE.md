@@ -40,8 +40,8 @@ one router-failure conclusion, both agreeing with the deterministic baseline.
 There is also an Angular NOC dashboard (`apps/web`, `npm run web`,
 <http://localhost:4200>) with a unified live pipeline timeline and manual lab
 fault buttons. Firestore access is read-only. Buttons call the separate
-localhost-only `services/lab-controller`, which accepts exactly three named
-synthetic-lab scenarios and writes their audit/output records to `labActions/`.
+localhost-only `services/lab-controller`, which accepts five named ISP-style
+fault scenarios plus restore and writes their audit/output records to `labActions/`.
 It is not connected to GPT and is not the future general Network Controller.
 
 ### The next action
@@ -265,11 +265,12 @@ npm run lab-controller    # localhost-only manual lab control API on :8787
 npm run web               # NOC dashboard on :4200
 ./lab/deploy.sh           # deploy + host routes (sudo only if routes missing)
 ./lab/verify.sh           # connectivity proof
-./lab/scenarios/01-link-failure.sh    # break R2 eth2
-./lab/scenarios/03-restore-network.sh # restore
+./lab/scenarios/03-interface-disabled.sh # administratively disable R2 eth2
+./lab/scenarios/06-restore-network.sh    # restore every ISP fault scenario
 ./scripts/reset-firestore.sh          # wipe emulator
 ./scripts/e2e-layer-zero.sh           # Increment 2 end-to-end
-./scripts/e2e-incidents.sh            # Increment 3 end-to-end (runs BOTH scenarios)
+./scripts/e2e-incidents.sh            # live-lab E2E (runs all five scenarios)
+./scripts/e2e-failure-categories.mjs  # focused credit-free failure-path E2E
 ./scripts/e2e-agent.sh                # Increment 4 end-to-end (uses GPT-5.6 Luna)
 ./lab/destroy.sh          # tear down + remove routes
 ```

@@ -221,7 +221,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isRootCauseType(value: unknown): value is RootCauseType {
-  return value === 'link_failure' || value === 'device_failure' || value === 'unknown';
+  return value === 'configuration_drift' ||
+    value === 'routing_session_failure' ||
+    value === 'interface_misconfiguration' ||
+    value === 'routing_service_failure' ||
+    value === 'resource_exhaustion' ||
+    value === 'unknown';
 }
 
 function stringArray(value: unknown): string[] {

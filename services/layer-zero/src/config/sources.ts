@@ -17,7 +17,11 @@ export interface LogSourceConfig {
   source: LogSource;
 }
 
-const FRR_LOG_PATHS = ['/var/log/frr/zebra.log', '/var/log/frr/ospfd.log'];
+const FRR_LOG_PATHS = [
+  '/var/log/frr/zebra.log',
+  '/var/log/frr/ospfd.log',
+  '/var/log/frr/acn-monitor.log',
+];
 
 /**
  * The log sources Layer 0 tails.

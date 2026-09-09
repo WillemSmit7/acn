@@ -26,7 +26,17 @@ const OUTPUT_SCHEMA = {
     'citedEventIds', 'citedLogIds',
   ],
   properties: {
-    rootCauseType: { type: 'string', enum: ['link_failure', 'device_failure', 'unknown'] },
+    rootCauseType: {
+      type: 'string',
+      enum: [
+        'configuration_drift',
+        'routing_session_failure',
+        'interface_misconfiguration',
+        'routing_service_failure',
+        'resource_exhaustion',
+        'unknown',
+      ],
+    },
     rootCauseDevices: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
@@ -211,7 +221,12 @@ function numeric(value: unknown): number {
 }
 
 function isRootCauseType(value: string): value is RootCauseType {
-  return value === 'link_failure' || value === 'device_failure' || value === 'unknown';
+  return value === 'configuration_drift' ||
+    value === 'routing_session_failure' ||
+    value === 'interface_misconfiguration' ||
+    value === 'routing_service_failure' ||
+    value === 'resource_exhaustion' ||
+    value === 'unknown';
 }
 
 function describe(error: unknown): string {

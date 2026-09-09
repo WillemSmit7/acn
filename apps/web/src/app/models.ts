@@ -41,7 +41,14 @@ export interface NetworkLog {
 }
 
 export interface RootCause {
-  type: 'link_failure' | 'device_failure' | 'unknown' | 'analyzing';
+  type:
+    | 'configuration_drift'
+    | 'routing_session_failure'
+    | 'interface_misconfiguration'
+    | 'routing_service_failure'
+    | 'resource_exhaustion'
+    | 'unknown'
+    | 'analyzing';
   devices: string[];
   summary: string;
   confidence: 'confirmed' | 'probable' | 'unknown';
@@ -69,7 +76,7 @@ export interface Incident {
 }
 
 export interface AgentConclusion {
-  rootCauseType: 'link_failure' | 'device_failure' | 'unknown';
+  rootCauseType: Exclude<RootCause['type'], 'analyzing'>;
   rootCauseDevices: string[];
   summary: string;
   confidence: 'high' | 'medium' | 'low';
@@ -111,7 +118,13 @@ export interface AgentRun {
 export interface LabAction {
   id: string;
   actionId: string;
-  scenario: 'link-failure' | 'router-failure' | 'restore';
+  scenario:
+    | 'configuration-drift'
+    | 'routing-session-failure'
+    | 'interface-disabled'
+    | 'routing-service-crash'
+    | 'resource-exhaustion'
+    | 'restore';
   label: string;
   status: 'running' | 'completed' | 'failed';
   output: string[];

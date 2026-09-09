@@ -2,15 +2,8 @@
 # ACN Increment 3 end-to-end test.
 #
 # Runs the whole stack - Health Service, Layer 0 and the Incident Service -
-# against the real lab, through BOTH fault scenarios in sequence:
-#
-#   scenario 01 (R2 eth2 shut)        -> expected root cause: R2 <-> R3 link failure
-#   scenario 02 (R3 container stopped) -> expected root cause: R3 device failure
-#
-# Those two produce an identical set of device_unreachable events, so running
-# both is the only honest way to show that correlation is doing something ICMP
-# alone could not. If this test ever passes with the two collapsed into the same
-# root cause, Increment 3 has stopped working.
+# against the real lab through all five ISP-style fault categories. This is the
+# slower live-lab counterpart to the credit-free focused fixture E2E.
 #
 # Prerequisites (already running in other terminals):
 #   ./lab/deploy.sh
@@ -57,7 +50,7 @@ echo "==> Clearing previous emulator data"
 ./scripts/reset-firestore.sh
 
 echo "==> Restoring the lab to a healthy baseline"
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 
 echo "==> Starting Layer 0, the Health Service and the Incident Service"
 LAYER_ZERO_PID="$(acn_start_service services/layer-zero/dist/index.js "${LAYER_ZERO_LOG}")"
@@ -72,24 +65,20 @@ acn_require_alive "Incident Service" "${INCIDENT_PID}" "${INCIDENT_LOG}"
 echo "==> Collecting a healthy baseline"
 sleep 12
 
-echo
-echo "==> SCENARIO 01 - breaking the R2 <-> R3 link"
-./lab/scenarios/01-link-failure.sh
-sleep 35
-
-echo "==> Restoring the network"
-./lab/scenarios/03-restore-network.sh
-# OSPF re-adjacency, then the ICMP recovery, then the settle window.
-sleep 55
-
-echo
-echo "==> SCENARIO 02 - stopping the R3 router"
-./lab/scenarios/02-router-failure.sh
-sleep 35
-
-echo "==> Restoring the network"
-./lab/scenarios/03-restore-network.sh
-sleep 60
+for scenario in \
+  01-configuration-drift \
+  02-routing-session-failure \
+  03-interface-disabled \
+  04-routing-service-crash \
+  05-resource-exhaustion; do
+  echo
+  echo "==> Running ${scenario}"
+  "./lab/scenarios/${scenario}.sh"
+  sleep 35
+  echo "==> Restoring the network"
+  ./lab/scenarios/06-restore-network.sh
+  sleep 45
+done
 
 cleanup
 

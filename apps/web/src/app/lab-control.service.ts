@@ -1,12 +1,23 @@
 import { Injectable, signal } from '@angular/core';
 
-export type ScenarioId = 'link-failure' | 'router-failure' | 'restore';
+export type ScenarioId =
+  | 'configuration-drift'
+  | 'routing-session-failure'
+  | 'interface-disabled'
+  | 'routing-service-crash'
+  | 'resource-exhaustion'
+  | 'restore';
 
 export interface ScenarioOption {
   id: ScenarioId;
   label: string;
   description: string;
   tone: 'danger' | 'restore';
+}
+
+export interface TriggerResult {
+  ok: boolean;
+  error: string | null;
 }
 
 interface ControllerStatus {
@@ -17,15 +28,33 @@ interface ControllerStatus {
 const ENDPOINT = 'http://127.0.0.1:8787';
 const FALLBACK_SCENARIOS: ScenarioOption[] = [
   {
-    id: 'link-failure',
-    label: 'Break R2–R3 link',
-    description: 'Shut R2 eth2 and watch r3 plus pc2 become unreachable.',
+    id: 'configuration-drift',
+    label: 'Introduce config drift',
+    description: 'Change the intended OSPF cost on R2 eth2.',
     tone: 'danger',
   },
   {
-    id: 'router-failure',
-    label: 'Stop R3 router',
-    description: 'Create the same ICMP symptoms with a different root cause.',
+    id: 'routing-session-failure',
+    label: 'Break OSPF session',
+    description: 'Make R2 eth2 passive while its link stays up.',
+    tone: 'danger',
+  },
+  {
+    id: 'interface-disabled',
+    label: 'Disable R2 eth2',
+    description: 'Administratively disable the logical port toward R3.',
+    tone: 'danger',
+  },
+  {
+    id: 'routing-service-crash',
+    label: 'Stop R3 ospfd',
+    description: 'Stop the routing daemon without stopping the router.',
+    tone: 'danger',
+  },
+  {
+    id: 'resource-exhaustion',
+    label: 'Exhaust R3 CPU',
+    description: 'Apply bounded control-plane pressure that starves OSPF.',
     tone: 'danger',
   },
   {
@@ -51,7 +80,7 @@ export class LabControlService {
     this.timer = setInterval(() => void this.refresh(), 2_000);
   }
 
-  async trigger(id: ScenarioId): Promise<void> {
+  async trigger(id: ScenarioId): Promise<TriggerResult> {
     this.sending.set(id);
     this.error.set(null);
     try {
@@ -63,9 +92,12 @@ export class LabControlService {
       if (!response.ok) throw new Error(payload.error ?? `Controller returned ${response.status}`);
       this.connected.set(true);
       this.busy.set(true);
+      return { ok: true, error: null };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       this.connected.set(false);
-      this.error.set(error instanceof Error ? error.message : String(error));
+      this.error.set(message);
+      return { ok: false, error: message };
     } finally {
       this.sending.set(null);
       await this.refresh();

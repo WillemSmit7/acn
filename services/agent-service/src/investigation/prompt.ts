@@ -1,6 +1,6 @@
 import type { EvidenceBundle, InvestigableIncident, PromptRecord } from '../models/types.js';
 
-export const PROMPT_VERSION = 'gpt-investigator-v1';
+export const PROMPT_VERSION = 'gpt-investigator-v2-isp-failures';
 
 const DEVELOPER_PROMPT = `You are the ACN read-only network incident investigator.
 
@@ -12,7 +12,9 @@ Rules:
 - Cite exact supplied event and log IDs supporting the conclusion. Never invent an ID.
 - Prefer raw device output over summaries when they differ.
 - If the evidence is insufficient, choose unknown and explain the gap.
-- Distinguish a link failure from a router failure by asking whether the far end independently corroborated the loss. A stopped router cannot emit a report.
+- Classify only these ISP-style causes: configuration drift, logical routing-session failure, interface/logical-port misconfiguration, routing-service failure, resource exhaustion, or unknown.
+- Treat ACNMON observations as probe results, then corroborate them with native FRR and reachability evidence when available.
+- Do not collapse an OSPF-only loss into an interface fault: an interface-down event or explicit admin-state observation is required.
 - Recovery events describe lifecycle and must not retrospectively change what originally failed.`;
 
 export function buildPrompt(

@@ -179,10 +179,10 @@ With the telemetry stack running:
 [16:20:00] pc2  healthy 2.4ms
 ```
 
-Break the R2 <-> R3 link:
+Administratively disable the R2 logical port toward R3:
 
 ```bash
-./lab/scenarios/01-link-failure.sh
+./lab/scenarios/03-interface-disabled.sh
 ```
 
 ```
@@ -205,7 +205,7 @@ In the emulator UI, `networkEvents/` now contains:
 Restore the network:
 
 ```bash
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 ```
 
 ```
@@ -245,19 +245,15 @@ were normalized, that every derived event resolves through its `sourceLogId`
 back to the exact line it came from, and that the R2-R3 failure was observed
 independently from both routers.
 
-For Increment 3, this runs the whole stack through **both** fault scenarios and
-asserts they are told apart:
+This runs the live stack through all five ISP-style fault scenarios:
 
 ```bash
 ./scripts/e2e-incidents.sh
 ```
 
-Scenario 01 (link cut) and scenario 02 (router stopped) produce an identical set
-of `device_unreachable` events, so this is the honest test of whether
-correlation is doing anything ICMP alone could not. It asserts one is diagnosed
-`link_failure` and the other `device_failure`, that each root cause predicts the
-symptoms actually observed, and that every incident traces back through its
-events to raw log lines.
+For fast, deterministic verification with no model charge, run
+`npm run test:e2e:failure-categories`. It exercises raw probe logs through
+normalization, deterministic diagnosis and the agent prompt/agreement boundary.
 
 For Increment 4, this creates both real incidents and has GPT-5.6 Luna
 investigate them. It is verified against the real lab and live API:
@@ -310,9 +306,12 @@ from the Health Service process. See [docs/architecture.md](docs/architecture.md
 
 | Script | Effect | Recovery |
 |--------|--------|----------|
-| `lab/scenarios/01-link-failure.sh` | Shuts R2 eth2 (the link to R3) | `03-restore-network.sh` |
-| `lab/scenarios/02-router-failure.sh` | Stops the R3 container | `03-restore-network.sh` |
-| `lab/scenarios/03-restore-network.sh` | Returns everything to a healthy baseline | — |
+| `lab/scenarios/01-configuration-drift.sh` | Changes the intended OSPF interface cost | `06-restore-network.sh` |
+| `lab/scenarios/02-routing-session-failure.sh` | Makes an OSPF interface passive while its port stays up | `06-restore-network.sh` |
+| `lab/scenarios/03-interface-disabled.sh` | Administratively disables R2 eth2 | `06-restore-network.sh` |
+| `lab/scenarios/04-routing-service-crash.sh` | Stops R3 ospfd while the router remains alive | `06-restore-network.sh` |
+| `lab/scenarios/05-resource-exhaustion.sh` | Applies bounded CPU pressure that starves ospfd | `06-restore-network.sh` |
+| `lab/scenarios/06-restore-network.sh` | Returns every scenario to the intended baseline | — |
 
 All are repeatable and none rebuild the lab.
 

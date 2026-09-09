@@ -34,7 +34,7 @@ test('Responses API request pins Luna, low reasoning, no storage and structured 
   assert.deepEqual(requestBody?.['reasoning'], { effort: 'low' });
   const text = requestBody?.['text'] as Record<string, unknown>;
   assert.equal((text['format'] as Record<string, unknown>)['type'], 'json_schema');
-  assert.equal(result.conclusion.rootCauseType, 'link_failure');
+  assert.equal(result.conclusion.rootCauseType, 'interface_misconfiguration');
   assert.equal(result.usage.reasoningTokens, 80);
   assert.equal(result.estimatedCostUsd, 0.0004);
 });

@@ -242,7 +242,7 @@ export class Correlator {
         entry.dirty = true;
 
         const { type } = entry.incident.rootCause;
-        if (type === 'link_failure' || type === 'device_failure') {
+        if (type !== 'unknown' && type !== 'analyzing') {
           entry.rootCauseFrozen = true;
         }
       }
@@ -356,6 +356,27 @@ function buildSymptoms(events: ObservedEvent[]): string[] {
         if (typeof neighbor === 'string') {
           symptoms.add(`${event.deviceId} lost OSPF neighbour ${neighbor}`);
         }
+        break;
+      }
+      case 'configuration_drift':
+        symptoms.add(`${event.deviceId} configuration drift detected`);
+        break;
+      case 'routing_session_down':
+        symptoms.add(`${event.deviceId} routing session down`);
+        break;
+      case 'interface_admin_down': {
+        const iface = event.attributes['interface'];
+        symptoms.add(`${event.deviceId} ${typeof iface === 'string' ? iface : 'interface'} administratively down`);
+        break;
+      }
+      case 'routing_service_down': {
+        const service = event.attributes['service'];
+        symptoms.add(`${event.deviceId} ${typeof service === 'string' ? service : 'routing service'} down`);
+        break;
+      }
+      case 'resource_exhaustion': {
+        const resource = event.attributes['resource'];
+        symptoms.add(`${event.deviceId} ${typeof resource === 'string' ? resource : 'resource'} exhausted`);
         break;
       }
       default:

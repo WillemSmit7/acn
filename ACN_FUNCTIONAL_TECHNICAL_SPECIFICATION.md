@@ -1,365 +1,536 @@
 # ACN Functional and Technical Specification
 
-## 1. System overview
+## Document purpose
 
-ACN, or **AI-Centered Network**, is an intelligent network-operations system that monitors network infrastructure, detects and correlates faults, determines likely root causes, and assists operators with controlled remediation of common recurring problems.
+This document specifies the proposed **AI-Centered Network (ACN)** solution. It describes the problem the system is intended to address, the capabilities that should be provided, the principal technical design considerations, and the criteria by which the solution may be evaluated.
 
-The platform collects health checks, logs and protocol telemetry from network devices. This data is normalized into events and incidents. A deterministic analysis engine and an AI agent investigate each incident, while risk and approval controls ensure that network changes are performed safely. A web-based Network Operations Centre (NOC) dashboard provides live monitoring, administration, reporting and audit information.
+The specification is written as a pre-implementation planning document. It defines intended behaviour and design direction without assuming that the described features have already been built.
 
-ACN addresses the problem of network teams receiving large volumes of disconnected alerts without a clear explanation of what failed, what was affected, or how the problem should be resolved. It focuses on frequent problems such as unreachable devices, failed links, disabled interfaces and lost routing neighbours.
+---
 
-## 2. System objectives
+## 1. Introduction
 
-- **OBJ-01:** Continuously monitor the availability and performance of network devices.
-- **OBJ-02:** Collect and normalize health checks, logs and protocol telemetry.
-- **OBJ-03:** Correlate related events into meaningful incidents.
-- **OBJ-04:** Identify probable device, interface, link and routing failures.
-- **OBJ-05:** Use AI to provide an independent and explainable incident investigation.
-- **OBJ-06:** Recommend or perform controlled network actions according to risk level.
-- **OBJ-07:** Require human approval for high-risk changes.
-- **OBJ-08:** Maintain a complete audit trail of incidents, decisions and network changes.
-- **OBJ-09:** Use historical incident data to improve future investigations.
-- **OBJ-10:** Provide a reliable environment for resolving common network faults repeatedly and consistently.
+### 1.1 Background
 
-## 3. Project scope
+Network operations teams often receive large volumes of health alerts, protocol messages, and device logs from separate tools. Although these observations may indicate the same underlying problem, they are frequently presented without sufficient correlation or explanation. Engineers must therefore spend time assembling evidence, identifying the probable cause, estimating the impact, and deciding how the fault should be resolved.
 
-### 3.1 In scope
+ACN is proposed as an intelligent network-operations solution that brings these activities into a single, explainable workflow. The system will collect operational observations, identify related failures, use deterministic and artificial-intelligence-assisted analysis to diagnose problems, and guide or perform controlled resolution of approved routine tasks.
 
-The completed ACN system includes:
+### 1.2 Purpose of the system
 
-- Network-device discovery and management.
-- ICMP, SNMP and gNMI health and performance monitoring.
-- Collection of interface, OSPF and BGP telemetry.
-- Raw network-log storage and normalization.
-- Live network event generation.
-- Incident detection, correlation and lifecycle management.
-- Deterministic root-cause analysis.
-- AI-assisted incident investigation.
-- Recommended and automated remediation actions.
-- Risk classification and approval workflows.
-- Rollback and post-change verification.
-- User authentication and role-based access control.
-- Incident acknowledgement, assignment and comments.
-- Historical incident analysis and pattern recognition.
-- Reporting, audit records and operational dashboards.
-- Reliable data storage and recovery for the local ACN environment.
+The purpose of ACN is to reduce the time and effort required to identify and resolve recurring network problems while preserving operator oversight and a clear audit trail. Artificial intelligence is central to the proposed solution: it will examine the available evidence, explain its reasoning, identify likely root causes, and recommend an appropriate response. Safety controls will prevent the AI capability from making unrestricted changes to network infrastructure.
 
-### 3.2 Out of scope
+### 1.3 Intended audience
 
-The system does not replace the underlying routers, switches or vendor management platforms. It does not make unrestricted network changes, bypass approval policies, or guarantee that every physical hardware fault can be repaired automatically.
+This specification is intended for:
 
-### 3.3 System boundary
+- project supervisors and academic evaluators;
+- network operators and network engineers;
+- system analysts, designers, and developers;
+- security, governance, and audit stakeholders; and
+- testers responsible for functional and technical validation.
 
-ACN is responsible for observation, data normalization, incident handling, investigation, decision support, controlled actions, verification and auditing. Network devices remain responsible for forwarding traffic and applying configuration. Supporting services provide identity, data storage and AI capabilities where required.
+### 1.4 Scope of this document
 
-## 4. Actors and user roles
+The document covers the proposed functional behaviour, system features, user and external interfaces, high-level architecture, data considerations, security controls, quality requirements, and acceptance principles for ACN.
 
-| Actor | Description | Main responsibilities |
-|---|---|---|
-| NOC operator | Monitors daily network operations | Views alerts, acknowledges incidents and performs approved actions |
-| Network engineer | Investigates and resolves technical faults | Reviews evidence, approves changes and manages devices |
-| Approver | Authorizes higher-risk actions | Reviews risk, impact and rollback plans |
-| Administrator | Manages the ACN platform | Manages users, roles, policies and integrations |
-| Auditor | Reviews historical activity | Views incidents, approvals, actions and change records |
-| AI agent | Investigates incidents | Analyses evidence and recommends suitable actions |
-| Monitoring services | Collect network information | Produce health checks, logs and events |
-| Network Controller | Executes approved changes | Applies, verifies and rolls back network actions |
-| External network devices | Supply operational information | Respond to monitoring and accept authorized configuration changes |
+Detailed implementation instructions, vendor-specific configuration commands, deployment addresses, and source-code design are outside the scope of this specification.
 
-## 5. User requirements
+---
 
-### UR-01: Monitor network status
+## 2. General description
 
-**As a NOC operator, I want to view the live health of all devices, so that I can quickly identify outages or degraded performance.**
+### 2.1 Product perspective
 
-### UR-02: Investigate incidents
+ACN will operate as a network-operations support platform alongside existing network devices and management practices. It will not replace routing, switching, or vendor management systems. Instead, it will observe network state, consolidate evidence, provide AI-assisted analysis, and coordinate controlled responses through approved interfaces.
 
-**As a network engineer, I want related events grouped into incidents, so that I can understand the complete fault rather than individual alerts.**
+The proposed solution will combine the following logical capabilities:
 
-### UR-03: Review root cause
+- collection of network health and operational telemetry;
+- storage of raw and normalized evidence;
+- event correlation and incident management;
+- deterministic and AI-assisted root-cause analysis;
+- recommendation and controlled execution of routine resolution tasks;
+- operator approval, verification, rollback, and audit controls; and
+- a visual dashboard for monitoring, investigation, and controlled scenario initiation.
 
-**As a network engineer, I want to see the probable root cause and its supporting evidence, so that I can make an informed decision.**
+### 2.2 Problem statement
 
-### UR-04: Receive AI assistance
+Routine network faults are often technically simple but operationally expensive. The same symptoms may be caused by different failures, and a response based only on a single alert can worsen the problem. ACN should help operators answer four questions consistently:
 
-**As a NOC operator, I want the AI agent to investigate incidents and recommend actions, so that faults can be resolved faster.**
+1. What changed in the network?
+2. Which services, devices, or users are affected?
+3. What is the most likely underlying cause?
+4. What is the safest suitable action to restore normal operation?
 
-### UR-05: Approve risky actions
+### 2.3 System objectives
 
-**As an approver, I want high-risk actions to wait for authorization, so that unsafe changes are not performed automatically.**
+| ID | Objective |
+|---|---|
+| OBJ-01 | Observe the health and operational state of managed network infrastructure. |
+| OBJ-02 | Convert diverse network observations into consistent, traceable evidence. |
+| OBJ-03 | Correlate related symptoms into meaningful incidents. |
+| OBJ-04 | Use AI-assisted analysis to identify and explain probable root causes. |
+| OBJ-05 | Support the safe resolution of recurring and routine network tasks. |
+| OBJ-06 | Preserve human oversight for actions that may affect network availability. |
+| OBJ-07 | Verify the outcome of a change and support recovery when the result is unsuccessful. |
+| OBJ-08 | Present live network, incident, investigation, and action information in a clear visual interface. |
+| OBJ-09 | Maintain evidence and audit records for accountability and later learning. |
 
-### UR-06: Perform controlled remediation
+### 2.4 User classes and external actors
 
-**As a network engineer, I want approved actions to be executed and verified, so that incidents can be resolved safely.**
+| Actor | Intended role |
+|---|---|
+| NOC operator | Observes network state, reviews incidents, and initiates permitted routine workflows. |
+| Network engineer | Investigates complex incidents, reviews evidence, and authorises or performs technical actions. |
+| Approver | Reviews risk, expected impact, and rollback information before higher-risk actions. |
+| Administrator | Manages system configuration, integrations, policies, and access. |
+| Auditor or evaluator | Reviews evidence, decisions, actions, and outcomes. |
+| AI investigation service | Analyses incident evidence and produces an explainable diagnosis and recommendation. |
+| Monitoring sources | Supply device health, logs, and protocol or interface observations. |
+| Network control interface | Applies only validated and authorised changes to managed infrastructure. |
 
-### UR-07: Review historical incidents
+### 2.5 Assumptions and dependencies
 
-**As a network engineer, I want to find similar past incidents and successful solutions, so that previous experience can guide current decisions.**
+The planned solution assumes that:
 
-### UR-08: Audit system activity
+- managed devices expose sufficient health, log, or protocol information;
+- network topology and device identity can be established accurately;
+- operational data can be stored with reliable timestamps;
+- an AI service is available when AI investigation is required;
+- approved network changes can be applied through a controlled interface; and
+- operators remain responsible for exceptional, ambiguous, or high-impact failures.
 
-**As an auditor, I want to review who approved and performed each change, so that the platform remains accountable.**
+### 2.6 Constraints
 
-## 6. Main use cases
+- The AI capability must be advisory unless a separately authorised action workflow permits execution.
+- Loss of the AI service must not stop basic monitoring or deterministic diagnosis.
+- Network actions must be limited to known targets and approved action types.
+- The system must retain the original evidence used to reach a conclusion.
+- The solution should remain suitable for a controlled laboratory environment while allowing later extension to broader environments.
 
-### UC-01: Detect a network fault
+### 2.7 Out of scope
 
-1. ACN collects health checks, logs and protocol telemetry.
-2. A change in device, interface or routing state is detected.
-3. The observation is normalized into a network event.
-4. Related events are grouped into an incident.
-5. The incident is displayed on the NOC dashboard.
+The initial ACN solution is not intended to:
 
-**Result:** The operator receives a clear incident instead of multiple unrelated alerts.
+- replace the forwarding or routing functions of network devices;
+- perform unrestricted autonomous configuration changes;
+- repair physical hardware;
+- guarantee a correct diagnosis when evidence is incomplete; or
+- replace the professional judgement of a network engineer for novel or high-risk incidents.
 
-### UC-02: Investigate an incident
+---
 
-1. The Incident Service determines an initial root cause.
-2. The AI agent receives the incident and its evidence.
-3. The AI agent produces an independent diagnosis.
-4. ACN compares both conclusions.
-5. Supporting events, logs and historical matches are shown to the operator.
+## 3. Functional requirements
 
-**Result:** The incident contains an explainable and traceable diagnosis.
-
-### UC-03: Approve and execute remediation
-
-1. The AI agent or operator proposes an action.
-2. ACN assigns a risk level.
-3. Low-risk actions may execute automatically according to policy.
-4. Medium- or high-risk actions are sent for approval.
-5. The Network Controller applies the approved change.
-6. ACN verifies the outcome and rolls back the change if necessary.
-
-**Result:** The network is changed through a controlled and auditable process.
-
-### UC-04: Use historical intelligence
-
-1. ACN compares a new incident with previous incidents.
-2. Similar symptoms, causes and actions are identified.
-3. Previous successful or failed outcomes are presented.
-4. The historical information contributes to the current recommendation.
-
-**Result:** Repeated incidents can be handled more consistently and efficiently.
-
-### UC-05: Manage users and access
-
-1. A user signs in securely.
-2. ACN verifies the user identity and assigned role.
-3. The dashboard displays functions allowed for that role.
-4. Restricted operations require the correct permission.
-5. User actions are recorded in the audit log.
-
-**Result:** Users can access only the information and operations they are authorized to use.
-
-## 7. Functional requirements
+### 3.1 Monitoring and evidence collection
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-001 | The system shall discover and monitor configured network devices. | Must |
-| FR-002 | The system shall collect health checks, logs and protocol telemetry. | Must |
-| FR-003 | The system shall normalize observations into standard network events. | Must |
-| FR-004 | The system shall preserve raw evidence for later inspection. | Must |
-| FR-005 | The system shall correlate related events into incidents. | Must |
-| FR-006 | The system shall identify probable root causes and affected devices. | Must |
-| FR-007 | The system shall compare predicted impact with observed impact. | Must |
-| FR-008 | The AI agent shall investigate incidents using available evidence. | Must |
-| FR-009 | AI conclusions shall cite supporting events and logs. | Must |
-| FR-010 | The system shall compare new incidents with historical incidents. | Should |
-| FR-011 | The system shall recommend suitable remediation actions. | Must |
-| FR-012 | Every proposed action shall receive a risk classification. | Must |
-| FR-013 | High-risk actions shall require human approval. | Must |
-| FR-014 | The Network Controller shall execute only authorized actions. | Must |
-| FR-015 | The system shall verify the result of every network change. | Must |
-| FR-016 | The system shall support rollback when verification fails. | Must |
-| FR-017 | The dashboard shall provide live topology, incident and action views. | Must |
-| FR-018 | Users shall authenticate before accessing protected ACN functions. | Must |
-| FR-019 | Access shall be restricted according to user role. | Must |
-| FR-020 | The system shall retain a complete audit history. | Must |
-| FR-021 | The system shall support search, filtering and reporting. | Should |
-| FR-022 | Failures in one service shall not stop the monitoring pipeline. | Must |
+| FR-001 | The system shall monitor the availability and operational condition of configured network devices. | Must |
+| FR-002 | The system shall collect relevant health checks, device logs, interface state, and routing-protocol observations. | Must |
+| FR-003 | The system shall preserve raw observations so that later conclusions can be traced to their source. | Must |
+| FR-004 | The system shall normalize supported observations into a consistent event format. | Must |
+| FR-005 | The system shall distinguish a new fault from an initial healthy baseline and from a recovery event. | Must |
 
-## 8. Validation and business rules
+### 3.2 Incident detection and correlation
 
-- The first device observation establishes a baseline and does not create a false alert.
-- Raw logs are stored even when they cannot be normalized.
-- Related events are correlated using time, topology and device relationships.
-- Root-cause conclusions must include supporting evidence.
-- AI citations must refer to valid evidence stored by ACN.
-- Every proposed action must include its target, expected result and risk level.
-- High-risk actions cannot execute without approval.
-- An approver cannot approve an action without the required role.
-- Network changes must record their previous and resulting state.
-- Failed verification triggers rollback when rollback is available.
-- Incidents are resolved only after network recovery is confirmed.
-- All approvals, actions and administrative changes are audited.
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-006 | The system shall group related events into an incident using time, device, topology, and protocol relationships. | Must |
+| FR-007 | The system shall identify affected devices or services where the available evidence permits this. | Must |
+| FR-008 | The system shall track an incident from detection through investigation, action, verification, and resolution. | Must |
+| FR-009 | The system shall avoid merging unrelated failures merely because they occur close together. | Should |
 
-## 9. System architecture
+### 3.3 AI-assisted identification of network problems
 
-ACN uses a service-based, event-driven architecture. Monitoring services collect information from network devices and store normalized data in a central platform. Other services consume these events to create incidents, perform investigations and execute controlled actions.
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-010 | The system shall provide an incident and its relevant evidence to an AI investigation capability. | Must |
+| FR-011 | The AI investigation shall identify a probable root cause or explicitly state that the evidence is insufficient. | Must |
+| FR-012 | The AI investigation shall explain its conclusion in language suitable for a network operator. | Must |
+| FR-013 | The AI investigation shall refer to the evidence supporting its conclusion. | Must |
+| FR-014 | The system shall compare the AI conclusion with deterministic analysis where both are available. | Must |
+| FR-015 | A disagreement between AI and deterministic analysis shall be visible to the operator and shall not be hidden or automatically resolved. | Must |
+
+### 3.4 Routine task identification and resolution
+
+ACN is intended to identify and assist with recurring tasks that have known symptoms, bounded impact, and a predictable recovery procedure. Representative routine tasks include:
+
+1. **Configuration drift or incorrect configuration** — detecting when an operational setting differs from the intended state and recommending or restoring the approved value.
+2. **Logical routing-neighbour or protocol-session failure** — identifying a lost or misconfigured routing relationship even when the underlying device and link remain available.
+3. **Administratively disabled interface or logical-port misconfiguration** — detecting that a required interface or logical port has been disabled or placed in an unintended state.
+4. **Routing-service or daemon failure** — distinguishing failure of a routing process from failure of the complete network device.
+5. **Resource exhaustion affecting a network service** — identifying when bounded resource pressure prevents a routing or control-plane service from operating normally.
+
+Additional routine tasks may include recovery from a known device reachability problem, validation of restored connectivity, and reapplication of a previously approved standard configuration.
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-016 | The system shall classify supported routine incidents into an appropriate problem category. | Must |
+| FR-017 | The system shall recommend a resolution that is compatible with the identified cause and available evidence. | Must |
+| FR-018 | A proposed action shall identify its target, expected result, risk, and verification method. | Must |
+| FR-019 | The system shall require operator approval when policy or risk level does not permit automatic execution. | Must |
+| FR-020 | Only approved and validated actions shall be sent to the network control interface. | Must |
+| FR-021 | The system shall verify whether the intended state and service have been restored after an action. | Must |
+| FR-022 | The system shall support rollback or escalation when verification fails. | Should |
+| FR-023 | The system shall record the action, authorisation, output, and result. | Must |
+
+### 3.5 Visualizer and operator dashboard
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-024 | The system shall provide a dashboard showing current network state and recent operational activity. | Must |
+| FR-025 | The dashboard shall present incidents, evidence, probable causes, AI investigations, and action status in a connected workflow. | Must |
+| FR-026 | The dashboard shall allow users to filter or focus the operational timeline. | Should |
+| FR-027 | In a controlled demonstration environment, the dashboard shall allow an operator to initiate approved fault scenarios for observation and testing. | Should |
+| FR-028 | Before a fault scenario is initiated, the dashboard shall identify the selected scenario and request clear confirmation. | Must |
+| FR-029 | The dashboard shall provide understandable feedback when a scenario or action request is accepted or fails. | Must |
+| FR-030 | Scenario controls shall be separated conceptually from AI investigation so that the AI remains unable to inject faults directly. | Must |
+| FR-031 | The dashboard shall remain usable when live data is delayed or an optional service is unavailable. | Should |
+
+### 3.6 Audit and historical support
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-032 | The system shall retain an audit record of significant incident, investigation, approval, and action activity. | Must |
+| FR-033 | The system should allow previous incidents and outcomes to be reviewed when investigating a similar problem. | Should |
+| FR-034 | Audit information shall distinguish human decisions, AI recommendations, and automated system activity. | Must |
+
+---
+
+## 4. System features and use cases
+
+### 4.1 Feature: Observe network state
+
+**Primary actor:** NOC operator
+
+**Goal:** Understand whether managed devices and services are operating normally.
+
+**Main flow:**
+
+1. Monitoring sources collect operational observations.
+2. ACN stores the raw observations and derives normalized events.
+3. Current device and service state is updated.
+4. The dashboard presents the latest state and recent changes.
+
+**Expected outcome:** The operator can distinguish a healthy network from a degraded or uncertain state.
+
+### 4.2 Feature: Detect and investigate an incident
+
+**Primary actor:** Network engineer
+
+**Goal:** Determine the likely cause and impact of a network problem.
+
+**Main flow:**
+
+1. Related events are correlated into an incident.
+2. Deterministic analysis produces an initial interpretation.
+3. The AI capability independently reviews the incident evidence.
+4. The system compares the conclusions and identifies agreement or disagreement.
+5. The dashboard presents the incident, evidence, reasoning, confidence, and affected scope.
+
+**Alternative flow:** If evidence is insufficient or the AI service is unavailable, the incident remains available with deterministic findings and a clear limitation notice.
+
+**Expected outcome:** The engineer receives an explainable diagnosis rather than an isolated alert.
+
+### 4.3 Feature: Resolve a routine task
+
+**Primary actor:** Network engineer or authorised operator
+
+**Goal:** Restore normal operation safely for a recognised routine failure.
+
+**Main flow:**
+
+1. ACN classifies the incident and proposes a suitable response.
+2. The proposal states the target, expected effect, risk, and verification plan.
+3. Policy determines whether approval is required.
+4. An authorised actor approves the action where necessary.
+5. The controlled action is applied.
+6. ACN observes the resulting network state.
+7. The action is marked successful, rolled back, or escalated.
+
+**Expected outcome:** A routine fault is resolved through a traceable process without granting unrestricted control to the AI capability.
+
+### 4.4 Feature: Initiate a controlled fault scenario
+
+**Primary actor:** Operator or evaluator
+
+**Goal:** Demonstrate and assess ACN behaviour using a known network condition.
+
+**Main flow:**
+
+1. The user selects a permitted scenario in the visualizer.
+2. The visualizer explains the selected condition and asks for confirmation.
+3. The scenario controller accepts or rejects the request.
+4. The visualizer reports the request outcome.
+5. ACN observes the resulting evidence, incident, diagnosis, and recovery in the same way as an operational event.
+
+**Expected outcome:** The planned monitoring and investigation workflow can be demonstrated safely and repeatedly.
+
+### 4.5 Feature: Review investigation history
+
+**Primary actor:** Network engineer or auditor
+
+**Goal:** Understand previous incidents, decisions, and outcomes.
+
+**Main flow:**
+
+1. The user selects a previous incident or searches by relevant criteria.
+2. ACN presents the original evidence, diagnosis, recommendation, approval, action, and result.
+3. Similar outcomes may be considered during a later investigation.
+
+**Expected outcome:** Operational experience remains available for accountability and future decision support.
+
+---
+
+## 5. External interface requirements
+
+### 5.1 User interface
+
+The primary user interface will be a web-based visualizer or NOC dashboard. It should:
+
+- present network state without requiring users to interpret raw storage records;
+- use consistent severity, status, and confidence indicators;
+- connect incidents to their supporting events and raw evidence;
+- distinguish AI conclusions from deterministic conclusions;
+- present confirmations and action results within the application;
+- provide accessible keyboard navigation, readable labels, and clear focus behaviour; and
+- adapt to common desktop and smaller-screen layouts.
+
+### 5.2 Network and monitoring interfaces
+
+ACN will require read access to supported device health, interface, log, and routing information. These interfaces should be isolated from action interfaces so that observation does not implicitly grant configuration rights.
+
+### 5.3 AI service interface
+
+The AI interface will receive a bounded incident context containing only the evidence required for investigation. The response should use a structured form that supports a root-cause category, explanation, confidence, and evidence references. Untrusted device text must be treated as evidence rather than as instructions.
+
+### 5.4 Network control interface
+
+The network control interface will accept only recognised actions with validated targets and appropriate authorisation. It should return sufficient information for the system to determine whether an action was accepted, completed, or failed.
+
+### 5.5 Data-store interface
+
+The system will require persistent storage for current state, raw observations, normalized events, incidents, investigations, scenario or action records, approvals, and audit history. User-facing clients should receive only the access required for their role.
+
+---
+
+## 6. Technical specification
+
+### 6.1 Architectural approach
+
+ACN is planned as a modular, service-oriented solution. Separate responsibilities will allow monitoring and deterministic diagnosis to continue when optional capabilities, such as AI investigation or the visualizer, are unavailable.
 
 ```mermaid
-flowchart TD
-    Devices[Network Devices]
-    Monitoring[Health, Log and Telemetry Collectors]
-    Data[(ACN Data Store)]
-    Incident[Incident and Root-Cause Service]
-    History[Historical Intelligence]
-    Agent[AI Agent]
-    Risk[Risk and Approval Service]
-    Controller[Network Controller]
-    Audit[Audit and Change History]
-    Dashboard[NOC Dashboard]
-
-    Devices --> Monitoring
-    Monitoring --> Data
-    Data --> Incident
-    Incident --> Agent
-    Data --> History
-    History --> Agent
-    Agent --> Risk
-    Risk -->|approved action| Controller
-    Controller --> Devices
-    Controller --> Audit
-    Incident --> Dashboard
-    Agent --> Dashboard
-    Risk --> Dashboard
-    Audit --> Dashboard
+flowchart LR
+    Network[Managed Network] --> Collection[Monitoring and Evidence Collection]
+    Collection --> Data[(Operational Data Store)]
+    Data --> Correlation[Incident Correlation and Deterministic Analysis]
+    Correlation --> AI[AI-Assisted Investigation]
+    Correlation --> Dashboard[Visualizer and NOC Dashboard]
+    AI --> Dashboard
+    Dashboard --> Governance[Policy, Approval and Audit]
+    Governance --> Control[Controlled Network Actions]
+    Control --> Network
+    Control --> Data
 ```
 
-This design separates monitoring, analysis, decision-making and network control. It improves maintainability and safety because each service has a clear responsibility.
+### 6.2 Logical components
 
-## 10. Technology stack
-
-| Purpose | Technology |
+| Component | Planned responsibility |
 |---|---|
-| Programming language | TypeScript |
-| Runtime | Node.js |
-| Frontend | Angular |
-| Operational database | Firestore |
-| Historical analysis | Indexed incident and change history |
-| Network emulation | Docker and Containerlab |
-| Routing | FRRouting with OSPF and BGP |
-| Monitoring | ICMP, SNMP, gNMI and device logs |
-| AI | OpenAI Responses API |
-| Authentication | Firebase Authentication |
-| Operation | Local services and containers |
-| Testing | Unit, integration and end-to-end testing |
+| Monitoring and evidence collection | Obtain device health, logs, interface state, and protocol observations. |
+| Normalization | Convert supported observations into a common event representation. |
+| Incident service | Correlate events, maintain incident state, and perform deterministic analysis. |
+| AI investigation service | Produce an independent, explainable, evidence-based diagnosis. |
+| Policy and approval service | Determine risk and ensure that required authorisation is obtained. |
+| Network control service | Apply approved routine actions and support verification or rollback. |
+| Scenario controller | Initiate only predefined demonstration conditions in a controlled environment. |
+| Visualizer or dashboard | Present network state, incidents, evidence, investigations, and action feedback. |
+| Operational data store | Preserve the state and evidence required by the other components. |
 
-## 11. Technical requirements
+### 6.3 Data flow
 
-- Services must communicate through secure and authenticated connections.
-- Secrets and API keys must be stored outside source code.
-- The platform must support the local lab and demonstration environment.
-- Monitoring services must process device checks asynchronously.
-- Data writes must preserve evidence relationships and timestamps.
-- Stored data must support suitable retention, indexing and recovery.
-- Services must be independently startable and recoverable.
-- The AI service must not bypass action and approval controls.
-- Network actions must be idempotent where possible.
-- The system must provide logging, metrics and service health checks.
-- The dashboard must support modern desktop and mobile browsers.
+The principal data flow will be:
 
-## 12. Database and data model
+1. A monitoring source observes network state.
+2. The raw observation is stored with its source and time.
+3. Supported observations are normalized into events.
+4. Related events are correlated into an incident.
+5. Deterministic and AI-assisted analysis evaluate the incident.
+6. The dashboard presents the evidence and conclusions.
+7. An approved response may be sent to the network control service.
+8. New observations verify recovery or indicate that escalation is required.
 
-| Entity | Purpose |
+At each stage, references should be retained so that a user can move from a conclusion back to the evidence on which it was based.
+
+### 6.4 Conceptual data model
+
+| Information group | Purpose |
 |---|---|
-| `users` | Stores user and role information |
-| `devices` | Stores managed network devices |
-| `healthChecks` | Stores device health and performance results |
-| `networkLogs` | Stores raw device logs |
-| `networkEvents` | Stores normalized operational events |
-| `incidents` | Stores correlated faults and root causes |
-| `agentRuns` | Stores AI investigations and evidence |
-| `agentActions` | Stores proposed remediation actions and risk levels |
-| `approvals` | Stores approval decisions and comments |
-| `networkChanges` | Stores executed changes, verification and rollback results |
-| `auditLogs` | Stores user and system activity |
-| `incidentHistory` | Stores searchable historical patterns and outcomes |
+| Devices and topology | Identify managed elements and their relationships. |
+| Health observations | Record availability and basic performance results. |
+| Raw network evidence | Preserve device and service output without losing original context. |
+| Normalized events | Represent relevant changes in a consistent form. |
+| Incidents | Group related symptoms, impact, lifecycle, and probable cause. |
+| AI investigations | Store conclusions, reasoning, confidence, and evidence references. |
+| Scenario and action records | Track requested work, progress, output, and outcome. |
+| Approvals and audit records | Record authorisation and accountable activity. |
 
-```mermaid
-erDiagram
-    USERS ||--o{ APPROVALS : makes
-    DEVICES ||--o{ HEALTHCHECKS : has
-    DEVICES ||--o{ NETWORKLOGS : produces
-    DEVICES ||--o{ NETWORKEVENTS : produces
-    INCIDENTS }o--o{ NETWORKEVENTS : contains
-    INCIDENTS ||--o{ AGENTRUNS : investigated_by
-    AGENTRUNS ||--o{ AGENTACTIONS : proposes
-    AGENTACTIONS ||--o{ APPROVALS : requires
-    AGENTACTIONS ||--o{ NETWORKCHANGES : results_in
-    NETWORKCHANGES ||--o{ AUDITLOGS : records
-    INCIDENTS ||--o{ INCIDENTHISTORY : contributes_to
-```
+### 6.5 Technical requirements
 
-## 13. Security
+| ID | Requirement |
+|---|---|
+| TR-001 | Components shall use well-defined interfaces and exchange validated data. |
+| TR-002 | Operational records shall include reliable identifiers and timestamps. |
+| TR-003 | Evidence relationships shall be preserved across events, incidents, investigations, and actions. |
+| TR-004 | Monitoring shall continue when AI investigation or the user interface is unavailable. |
+| TR-005 | AI requests shall be bounded, auditable, and protected from instructions contained in untrusted network evidence. |
+| TR-006 | Secrets and privileged credentials shall be kept outside client applications and source documents. |
+| TR-007 | Network write access shall be separated from monitoring and AI investigation. |
+| TR-008 | Action processing shall provide clear accepted, completed, failed, and verification states. |
+| TR-009 | The design shall support repeatable automated testing without requiring live production changes. |
+| TR-010 | The system shall allow components to be replaced or extended without redesigning the complete workflow. |
 
-ACN uses authenticated access and role-based authorization. Operators, engineers, approvers, administrators and auditors receive different permissions. Backend services use dedicated identities with only the permissions required for their responsibilities.
+---
 
-API keys and credentials are stored outside source code in protected environment configuration. Client applications cannot directly modify protected monitoring or audit records.
+## 7. Nonfunctional requirements
 
-The AI agent cannot execute network changes directly. Every action passes through validation, risk classification, authorization and the Network Controller. All important user and system activities are recorded for audit purposes.
+### 7.1 Security and safety
 
-## 14. Performance and reliability
+- Users should be authenticated before accessing protected operational functions.
+- Access should be limited according to operational responsibility.
+- Privileged actions should require explicit authorisation and should be fully audited.
+- The AI capability must not hold unrestricted network credentials.
+- Device logs and external input must be validated and treated as untrusted data.
+- Sensitive configuration and credentials must not be exposed in the visualizer or audit output.
 
-ACN uses asynchronous monitoring, batched writes, indexed queries and bounded dashboard results. Health checks and logs are separated from current incident data and managed through simple retention rules.
+### 7.2 Reliability and availability
 
-Services operate independently so that failure in the AI, dashboard or action layer does not stop basic monitoring. Failed checks and actions are recorded clearly, while verified rollback helps the system recover from unsuccessful changes.
+- Failure of one optional component should not stop basic observation and evidence collection.
+- Temporary data-store or integration failures should be reported clearly and retried where safe.
+- Duplicate observations or repeated requests should not cause unsafe repeated actions.
+- Recovery should be confirmed from new observations rather than assumed from a successful command response.
 
-## 15. Error handling
+### 7.3 Performance
 
-Individual device, database, AI or action failures do not stop the complete monitoring pipeline. Services record useful errors and continue processing other work.
+- New operational information should become visible within a period appropriate for incident response.
+- Recent dashboard views should use bounded data sets so that historical growth does not degrade normal operation.
+- Incident analysis should prioritize relevant evidence rather than processing unrelated historical data.
 
-Failed AI investigations are shown clearly without replacing the deterministic diagnosis. Failed network actions are verified, reported and rolled back when possible. Dashboard users receive understandable feedback when data or services are temporarily unavailable.
+### 7.4 Usability and accessibility
 
-## 16. Configuration and operation
+- Status, severity, confidence, and action outcomes should use consistent language and visual treatment.
+- Important actions should have human-readable labels and confirmation messages.
+- The dashboard should support keyboard use and clear focus movement.
+- Errors should explain what failed and what the operator can do next.
+- The visualizer should avoid presenting an empty display as proof that the network is healthy.
 
-ACN operates in a local laboratory environment. Its network runs in containers, while the monitoring, incident, AI and controller services are configured through environment variables and protected local secrets.
+### 7.5 Maintainability and extensibility
 
-Separate development and testing configurations prevent test data and credentials from being mixed with normal demonstrations.
+- Monitoring, analysis, AI, action, and presentation responsibilities should remain separated.
+- New event or routine-task categories should be addable without changing unrelated components.
+- Common data definitions should be consistent across services.
+- Significant business rules should be testable independently of external services.
 
-## 17. Testing and quality assurance
+### 7.6 Scalability
 
-The completed platform includes:
+The initial solution may target a controlled environment, but the design should allow additional devices, observations, incidents, and users to be introduced. Growth should be supported through bounded queries, suitable data retention, asynchronous processing, and independently scalable components where required.
 
-- Unit tests for monitoring, parsing, correlation, AI investigation and risk rules.
-- Integration tests for database, identity, approval and controller services.
-- End-to-end tests for device failure, link failure, approval and remediation flows.
-- Security tests for authentication and authorization.
-- Reliability tests for repeated incidents and normal monitoring workloads.
-- Recovery tests for service, database and network-action failures.
-- User-interface and acceptance testing for all main roles.
+### 7.7 Auditability and explainability
 
-All increments are considered complete once their functional requirements and end-to-end acceptance tests pass.
+- Every diagnosis should be traceable to stored evidence.
+- AI output should be identifiable as AI-generated and should include an understandable explanation.
+- Human approval and automated activity should be distinguishable.
+- Changes and verification outcomes should be retained for review.
 
-## 18. Implementation status
+---
 
-| Increment | Scope | Status |
+## 8. Validation and acceptance approach
+
+The planned system should be evaluated through a combination of unit, integration, end-to-end, and user-interface testing.
+
+### 8.1 Functional validation
+
+Acceptance should demonstrate that:
+
+- healthy baseline observations do not create false incidents;
+- supported faults produce appropriate events and incidents;
+- the five representative routine fault categories can be distinguished from one another;
+- deterministic and AI conclusions retain valid evidence references;
+- AI uncertainty and disagreement are shown honestly;
+- authorised actions cannot bypass the required policy and approval steps;
+- action results are verified from subsequent network state;
+- the dashboard presents live state, evidence, and feedback coherently; and
+- fault scenarios cannot be initiated without an explicit user action and clear confirmation.
+
+### 8.2 Technical validation
+
+Technical testing should cover:
+
+- data validation and evidence traceability;
+- component failure and recovery;
+- unavailable AI or storage dependencies;
+- duplicate and concurrent requests;
+- access-control boundaries;
+- safe handling of untrusted log content;
+- performance under representative monitoring volume; and
+- operation without paid or production services where a deterministic test substitute is appropriate.
+
+### 8.3 User acceptance
+
+Representative operators should be able to observe a fault, understand its impact, review the AI-assisted explanation, distinguish the proposed response from the diagnosis, and follow the outcome of an authorised action without requiring knowledge of the internal implementation.
+
+---
+
+## 9. Planned delivery approach
+
+The following sequence provides a practical implementation plan without implying completion status:
+
+1. Establish the controlled network environment, device inventory, and health monitoring.
+2. Collect raw operational evidence and normalize supported events.
+3. Correlate events into incidents and develop deterministic diagnosis.
+4. Add read-only AI-assisted investigation and evidence comparison.
+5. Introduce the visualizer for network, incident, investigation, and scenario observation.
+6. Add controlled routine actions, policy, approval, verification, and rollback.
+7. Add authentication, role-based access, audit review, and historical intelligence.
+8. Evaluate scalability, reliability, advanced monitoring, and broader deployment needs.
+
+Each phase should be accepted only after its stated functional and technical criteria have been demonstrated.
+
+---
+
+## 10. Requirements traceability summary
+
+| Objective | Related requirements | Principal capability |
 |---|---|---|
-| 1 | Network lab, health monitoring and Firestore | Complete |
-| 2 | Raw logs and event normalization | Complete |
-| 3 | Incident detection and root-cause correlation | Complete |
-| 4 | Read-only AI incident investigation | Complete |
-| 5 | Controlled network actions | Complete |
-| 6 | Risk levels and approval workflow | Complete |
-| 7 | Full authenticated NOC dashboard | Complete |
-| 8 | Historical incident intelligence | Complete |
-| 9 | Advanced SNMP, gNMI and routing monitoring | Complete |
-| 10 | Reliable storage, recovery and system maintenance | Complete |
+| Observe the network | FR-001–FR-005 | Monitoring and evidence collection |
+| Detect and explain incidents | FR-006–FR-015 | Correlation, deterministic analysis, and AI investigation |
+| Resolve routine tasks safely | FR-016–FR-023 | Recommendation, approval, control, and verification |
+| Provide an operational visualizer | FR-024–FR-031 | Dashboard and controlled scenarios |
+| Preserve accountability and learning | FR-032–FR-034 | Audit and historical support |
 
-## 19. Traceability summary
+---
 
-| Objective | Main requirements | Main component |
+## Appendix A: Representative routine problem categories
+
+| Category | Functional interpretation | Intended outcome |
 |---|---|---|
-| Monitor the network | FR-001–FR-004 | Monitoring services |
-| Detect and diagnose incidents | FR-005–FR-009 | Incident Service and AI Agent |
-| Use historical intelligence | FR-010 | Historical Intelligence Service |
-| Remediate safely | FR-011–FR-016 | Risk Service and Network Controller |
-| Provide an operational interface | FR-017–FR-019 | NOC dashboard and authentication |
-| Maintain accountability | FR-020–FR-022 | Audit, reporting and service monitoring |
+| Configuration drift or incorrect configuration | A relevant setting differs from the intended operational state. | Identify the difference and recommend or restore the approved state. |
+| Logical routing-neighbour or protocol-session failure | A routing relationship is unavailable or misconfigured while the underlying device may remain operational. | Restore the intended protocol relationship without misclassifying the whole device as failed. |
+| Disabled interface or logical-port misconfiguration | A required interface or logical port is administratively disabled or incorrectly configured. | Restore the intended interface state and verify dependent connectivity. |
+| Routing-service or daemon failure | A routing process fails while the device itself remains reachable. | Restore the affected service and verify routing recovery. |
+| Resource exhaustion affecting a network service | Resource pressure prevents a network service from operating normally. | Relieve the bounded pressure, restore the service, and confirm stable operation. |
 
-## 20. Conclusion
+## Appendix B: Glossary
 
-ACN provides an end-to-end intelligent network-operations solution. It monitors network infrastructure, converts telemetry into meaningful incidents, explains probable root causes, uses AI and historical information to recommend solutions, and performs approved remediation through a controlled process.
-
-The completed platform combines observability, explainable AI, human approval, controlled network fixes and auditability in one integrated local NOC environment.
+| Term | Meaning |
+|---|---|
+| ACN | AI-Centered Network. |
+| Deterministic analysis | Rule-based analysis whose conclusion follows defined logic. |
+| Evidence | A stored health result, log, event, or related observation used during investigation. |
+| Incident | A group of related operational events representing a network problem and its lifecycle. |
+| Routine task | A recurring network problem with a known, bounded, and testable response. |
+| Scenario | A predefined condition introduced in a controlled environment for demonstration or testing. |
+| Visualizer | The user-facing dashboard used to observe network state, incidents, investigations, and controlled scenarios. |

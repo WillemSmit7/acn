@@ -39,7 +39,7 @@ for (const run of runs) {
 console.log();
 
 const completed = runs.filter((run) => run.status === 'completed');
-check(completed.length >= 2, `at least two investigations completed (saw ${completed.length})`);
+check(completed.length >= 5, `at least five investigations completed (saw ${completed.length})`);
 check(runs.every((run) => run.status === 'completed'), 'no investigation failed or remained running');
 check(runs.every((run) => incidents.has(run.incidentId)), 'every run references a real incident');
 check(
@@ -86,8 +86,13 @@ check(
 );
 
 const types = new Set(completed.map((run) => run.conclusion?.rootCauseType));
-check(types.has('link_failure'), 'Luna identified the link-failure scenario');
-check(types.has('device_failure'), 'Luna identified the router-failure scenario');
+for (const type of [
+  'configuration_drift',
+  'routing_session_failure',
+  'interface_misconfiguration',
+  'routing_service_failure',
+  'resource_exhaustion',
+]) check(types.has(type), `Luna identified ${type}`);
 
 console.log(`\n=== INCREMENT 4 E2E: ${failures === 0 ? GREEN + 'PASS' : RED + 'FAIL (' + failures + ')'}${RESET} ===`);
 process.exit(failures === 0 ? 0 : 1);

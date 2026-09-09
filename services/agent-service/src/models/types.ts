@@ -1,6 +1,12 @@
 import type { ReasoningEffort } from '../config/env.js';
 
-export type RootCauseType = 'link_failure' | 'device_failure' | 'unknown';
+export type RootCauseType =
+  | 'configuration_drift'
+  | 'routing_session_failure'
+  | 'interface_misconfiguration'
+  | 'routing_service_failure'
+  | 'resource_exhaustion'
+  | 'unknown';
 export type DeterministicConfidence = 'confirmed' | 'probable' | 'unknown';
 
 export interface DeterministicRootCause {

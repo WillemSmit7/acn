@@ -195,7 +195,9 @@ partial guesses about it.
 }
 ```
 
-`rootCauseType` is `link_failure`, `device_failure`, `unknown` or `analyzing`.
+`rootCauseType` is `configuration_drift`, `routing_session_failure`,
+`interface_misconfiguration`, `routing_service_failure`, `resource_exhaustion`,
+`unknown` or `analyzing`.
 `confidence` is `confirmed` when both ends of a link independently reported
 losing each other, and `probable` when one end reported and the silent peer is
 itself unreachable — consistent with that peer having failed, but the peer
@@ -311,8 +313,8 @@ display record for the synthetic lab, not an AI-proposed action.
 ```json
 {
   "actionId": "LAB-...",
-  "scenario": "link-failure",
-  "label": "Break R2–R3 link",
+  "scenario": "interface-disabled",
+  "label": "Disable R2 eth2",
   "status": "completed",
   "output": ["==> Shutting down eth2 (to-r3) on R2", "..."],
   "requestedAt": "<server timestamp>",
@@ -324,7 +326,7 @@ display record for the synthetic lab, not an AI-proposed action.
 ```
 
 `status` is `running`, `completed` or `failed`. Output is capped to the latest
-100 lines. The controller accepts only `link-failure`, `router-failure` and
+100 lines. The controller accepts only the five documented ISP failure ids plus
 `restore`; no request data becomes a command or script path.
 
 ---

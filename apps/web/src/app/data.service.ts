@@ -310,8 +310,7 @@ function toLabAction({ id, data }: { id: string; data: DocumentData }): LabActio
   return {
     id,
     actionId: str(data['actionId'], id),
-    scenario:
-      scenario === 'router-failure' || scenario === 'restore' ? scenario : 'link-failure',
+    scenario: isLabScenario(scenario) ? scenario : 'configuration-drift',
     label: str(data['label'], scenario),
     status: status === 'completed' || status === 'failed' ? status : 'running',
     output: strArray(data['output']),
@@ -343,8 +342,7 @@ function toAgentConclusion(value: unknown): AgentConclusion | null {
   const type = str(raw['rootCauseType'], 'unknown');
   const confidence = str(raw['confidence'], 'low');
   return {
-    rootCauseType:
-      type === 'link_failure' || type === 'device_failure' ? type : 'unknown',
+    rootCauseType: isAgentRootCause(type) ? type : 'unknown',
     rootCauseDevices: strArray(raw['rootCauseDevices']),
     summary: str(raw['summary']),
     confidence: confidence === 'high' || confidence === 'medium' ? confidence : 'low',
@@ -352,6 +350,24 @@ function toAgentConclusion(value: unknown): AgentConclusion | null {
     citedEventIds: strArray(raw['citedEventIds']),
     citedLogIds: strArray(raw['citedLogIds']),
   };
+}
+
+function isLabScenario(value: string): value is LabAction['scenario'] {
+  return value === 'configuration-drift' ||
+    value === 'routing-session-failure' ||
+    value === 'interface-disabled' ||
+    value === 'routing-service-crash' ||
+    value === 'resource-exhaustion' ||
+    value === 'restore';
+}
+
+function isAgentRootCause(value: string): value is AgentConclusion['rootCauseType'] {
+  return value === 'configuration_drift' ||
+    value === 'routing_session_failure' ||
+    value === 'interface_misconfiguration' ||
+    value === 'routing_service_failure' ||
+    value === 'resource_exhaustion' ||
+    value === 'unknown';
 }
 
 function object(value: unknown): DocumentData {

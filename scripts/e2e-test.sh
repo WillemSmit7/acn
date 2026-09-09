@@ -41,7 +41,7 @@ echo "==> Clearing previous emulator data"
 ./scripts/reset-firestore.sh
 
 echo "==> Restoring the lab to a healthy baseline"
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 
 echo "==> Starting the Health Service (interval ${HEALTH_CHECK_INTERVAL_SECONDS}s)"
 SERVICE_PID="$(acn_start_service services/health-service/dist/index.js "${SERVICE_LOG}")"
@@ -56,11 +56,11 @@ echo "==> Collecting a healthy baseline"
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 2 + 5 ))
 
 echo "==> Breaking the R2 <-> R3 link"
-./lab/scenarios/01-link-failure.sh
+./lab/scenarios/03-interface-disabled.sh
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 3 ))
 
 echo "==> Restoring the network"
-./lab/scenarios/03-restore-network.sh
+./lab/scenarios/06-restore-network.sh
 sleep $(( HEALTH_CHECK_INTERVAL_SECONDS * 3 ))
 
 cleanup

@@ -44,49 +44,16 @@ for (const incident of incidents) {
 }
 console.log();
 
-const linkIncident = incidents.find((i) => i.rootCauseType === 'link_failure');
-const deviceIncident = incidents.find((i) => i.rootCauseType === 'device_failure');
-
-check(incidents.length >= 2, `at least two incidents were raised (saw ${incidents.length})`);
-
-// The headline claim of Increment 3. Both scenarios cut off exactly the same
-// devices, so ICMP alone cannot separate them - only the log evidence can.
-check(linkIncident !== undefined, 'scenario 01 was diagnosed as a link failure');
-check(deviceIncident !== undefined, 'scenario 02 was diagnosed as a device failure');
-check(
-  linkIncident !== undefined &&
-    deviceIncident !== undefined &&
-    linkIncident.incidentId !== deviceIncident.incidentId,
-  'the two scenarios produced different incidents with different root causes',
-);
-
-if (linkIncident !== undefined) {
-  check(
-    JSON.stringify([...(linkIncident.rootCause?.devices ?? [])].sort()) === JSON.stringify(['r2', 'r3']),
-    'the link failure implicates exactly r2 and r3',
-  );
-  check(
-    linkIncident.rootCause?.confidence === 'confirmed',
-    'the link failure is confirmed - both ends reported independently',
-  );
-}
-
-if (deviceIncident !== undefined) {
-  check(
-    JSON.stringify(deviceIncident.rootCause?.devices ?? []) === JSON.stringify(['r3']),
-    'the device failure implicates exactly r3',
-  );
-}
-
-// Both scenarios must have produced identical observed symptoms; that is what
-// makes the differing diagnosis meaningful rather than lucky.
-if (linkIncident !== undefined && deviceIncident !== undefined) {
-  const linkObserved = JSON.stringify([...(linkIncident.rootCause?.observedUnreachable ?? [])].sort());
-  const deviceObserved = JSON.stringify([...(deviceIncident.rootCause?.observedUnreachable ?? [])].sort());
-  check(
-    linkObserved === deviceObserved && linkObserved === JSON.stringify(['pc2', 'r3']),
-    'both scenarios produced the same observed symptoms (pc2, r3 unreachable)',
-  );
+const requiredTypes = [
+  'configuration_drift',
+  'routing_session_failure',
+  'interface_misconfiguration',
+  'routing_service_failure',
+  'resource_exhaustion',
+];
+check(incidents.length >= 5, `at least five incidents were raised (saw ${incidents.length})`);
+for (const type of requiredTypes) {
+  check(incidents.some((incident) => incident.rootCauseType === type), `${type} was detected`);
 }
 
 check(
@@ -130,13 +97,9 @@ check(
   'log-derived events in an incident trace all the way back to their raw log line',
 );
 
-if (linkIncident !== undefined) {
-  console.log(`\n  ${linkIncident.incidentId} evidence:`);
-  for (const line of linkIncident.rootCause?.evidence ?? []) console.log(`    - ${line}`);
-}
-if (deviceIncident !== undefined) {
-  console.log(`\n  ${deviceIncident.incidentId} evidence:`);
-  for (const line of deviceIncident.rootCause?.evidence ?? []) console.log(`    - ${line}`);
+for (const incident of incidents) {
+  console.log(`\n  ${incident.incidentId} evidence:`);
+  for (const line of incident.rootCause?.evidence ?? []) console.log(`    - ${line}`);
 }
 
 console.log(`\n=== INCREMENT 3 E2E: ${failures === 0 ? GREEN + 'PASS' : RED + 'FAIL (' + failures + ')'}${RESET} ===`);

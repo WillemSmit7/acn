@@ -2,18 +2,29 @@
 
 Last updated: 2026-08-26
 
-| Increment | Scope | Status |
-|-----------|-------|--------|
-| **1** | Emulated network + Health Service + Firestore | **Complete — 15/15 criteria verified** |
-| **2** | Raw logs + Layer 0 normalization | **Complete — verified against a real link failure** |
-| **3** | Incident detection and correlation | **Complete — both fault scenarios told apart** |
-| **4** | GPT-5.6 Luna read-only investigation agent | **Complete — real two-scenario live-model e2e passed** |
-| 5 | Controlled network actions | Not started |
-| 6 | Risk levels and approval workflow | Not started |
-| 7 | Angular NOC UI | Read-only dashboard pulled forward; auth still to do |
-| 8 | Historical intelligence | Not started |
-| 9 | Advanced monitoring (SNMP, gNMI, BGP/OSPF) | Not started |
-| 10 | Production storage and scalability | Not started |
+## ISP failure simulation update
+
+The current lab-controller surface now contains five targeted ISP-style
+failures: configuration drift, logical OSPF-session failure, administratively
+disabled interface, ospfd crash, and bounded CPU exhaustion affecting ospfd.
+The former whole-router-stop scenario was removed; the existing interface
+shutdown was retained and reclassified because it genuinely maps to the
+logical-port category. Each scenario records a read-back observation in the raw
+log pipeline, and `npm run test:e2e:failure-categories` verifies the complete
+credit-free path through normalization, deterministic diagnosis and agent input.
+
+| Increment | Scope                                         | Status                                                 |
+| --------- | --------------------------------------------- | ------------------------------------------------------ |
+| **1**     | Emulated network + Health Service + Firestore | **Complete — 15/15 criteria verified**                 |
+| **2**     | Raw logs + Layer 0 normalization              | **Complete — verified against a real link failure**    |
+| **3**     | Incident detection and correlation            | **Complete — both fault scenarios told apart**         |
+| **4**     | GPT-5.6 Luna read-only investigation agent    | **Complete — real two-scenario live-model e2e passed** |
+| 5         | Controlled network actions                    | Not started                                            |
+| 6         | Risk levels and approval workflow             | Not started                                            |
+| 7         | Angular NOC UI                                | Read-only dashboard pulled forward; auth still to do   |
+| 8         | Historical intelligence                       | Not started                                            |
+| 9         | Advanced monitoring (SNMP, gNMI, BGP/OSPF)    | Not started                                            |
+| 10        | Production storage and scalability            | Not started                                            |
 
 ---
 
@@ -90,32 +101,32 @@ decision worth its cost. Reconvergence after `no shutdown` took ~4s.
 
 ## Acceptance criteria — Increment 1
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | Git repository exists with a clean structure | Done |
-| 2 | Topology starts with one documented command | **Verified** — lab deployed and converged |
-| 3 | PC1 can communicate with PC2 | **Verified** — host → r1 → r2 → r3 → pc2 path proven |
-| 4 | R2–R3 can deliberately be disconnected | **Verified** — `01-link-failure.sh` shuts `r2:eth2` |
-| 5 | Connectivity loss is visible | **Verified** — r3 and pc2 went DOWN, r1/r2/pc1 unaffected |
-| 6 | Network restores without a rebuild | **Verified** — `03-restore-network.sh`, reconverged in ~4s |
-| 7 | Firebase Emulator Suite runs locally | **Verified** |
-| 8 | Health Service starts with one documented command | **Verified** |
-| 9 | Health Service checks devices periodically | **Verified** against the real lab |
-| 10 | Each health check is saved to Firestore | **Verified** against the real lab |
-| 11 | healthy → down creates `DEVICE_UNREACHABLE` | **Verified** — emitted by a real link failure |
-| 12 | down → healthy creates `DEVICE_RECOVERED` | **Verified** — emitted by a real link restore |
-| 13 | Service survives individual check failures | **Verified** by unit tests and by design |
-| 14 | No production credentials committed | **Verified** |
-| 15 | README documents setup and demonstration | Done |
+| #   | Criterion                                         | Status                                                     |
+| --- | ------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | Git repository exists with a clean structure      | Done                                                       |
+| 2   | Topology starts with one documented command       | **Verified** — lab deployed and converged                  |
+| 3   | PC1 can communicate with PC2                      | **Verified** — host → r1 → r2 → r3 → pc2 path proven       |
+| 4   | R2–R3 can deliberately be disconnected            | **Verified** — `01-link-failure.sh` shuts `r2:eth2`        |
+| 5   | Connectivity loss is visible                      | **Verified** — r3 and pc2 went DOWN, r1/r2/pc1 unaffected  |
+| 6   | Network restores without a rebuild                | **Verified** — `03-restore-network.sh`, reconverged in ~4s |
+| 7   | Firebase Emulator Suite runs locally              | **Verified**                                               |
+| 8   | Health Service starts with one documented command | **Verified**                                               |
+| 9   | Health Service checks devices periodically        | **Verified** against the real lab                          |
+| 10  | Each health check is saved to Firestore           | **Verified** against the real lab                          |
+| 11  | healthy → down creates `DEVICE_UNREACHABLE`       | **Verified** — emitted by a real link failure              |
+| 12  | down → healthy creates `DEVICE_RECOVERED`         | **Verified** — emitted by a real link restore              |
+| 13  | Service survives individual check failures        | **Verified** by unit tests and by design                   |
+| 14  | No production credentials committed               | **Verified**                                               |
+| 15  | README documents setup and demonstration          | Done                                                       |
 
 15 of 15 verified. Criteria 4–6 and 11–12 were all cleared by the single
 end-to-end run above, driven by an actual R2–R3 link failure rather than a
 synthetic target set.
 
-
 ## What was built — Increment 1
 
 ### `lab/`
+
 - `topology.clab.yml` — PC1–R1–R2–R3–PC2, FRRouting 10.2.1, static management
   addressing, deterministic interface naming
 - `configs/r{1,2,3}/frr.conf` — OSPF area 0, per-router loopback, point-to-point
@@ -127,6 +138,7 @@ synthetic target set.
 - `scenarios/01-link-failure.sh`, `02-router-failure.sh`, `03-restore-network.sh`
 
 ### `services/health-service/`
+
 - `src/config/devices.ts` — the single source of truth for lab addressing
 - `src/config/env.ts` — validated environment configuration
 - `src/checks/ping.ts` — ICMP via the system `ping` binary; distinguishes a
@@ -139,15 +151,18 @@ synthetic target set.
 - `tests/` — 18 unit tests
 
 ### `firebase/`
+
 - `firestore.rules` — deny all direct client access (all writes are Admin SDK)
 - `firestore.indexes.json` — composite indexes for later queries
 
 ### `scripts/`
+
 - `e2e-test.sh` — drives the full lab cycle and asserts the result
 - `assert-firestore.mjs` — the acceptance assertions
 - `reset-firestore.sh` — clear emulator data
 
 ### `docs/`
+
 - `architecture.md` — layering and the key design decisions
 - `data-model.md` — every collection, implemented and planned
 - `incident-model.md` — Increment 3 direction
@@ -224,6 +239,7 @@ Layer 0 tails each router's FRR logs, stores every line verbatim in
 ### What was built
 
 `services/layer-zero/`
+
 - `src/collector/logTail.ts` — follows log files inside a container, restarts a
   dead tail, buffers partial lines
 - `src/normalize/parser.ts` — FRR line -> structured envelope, UTC-correct
@@ -262,17 +278,17 @@ group.
 
 ## Acceptance criteria — Increment 2
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | Raw log messages are stored in `networkLogs/` | **Verified** — 78 lines in one run |
-| 2 | The original text is preserved unmodified | **Verified** — asserted on every document |
-| 3 | Logs are normalized into `networkEvents/` | **Verified** |
-| 4 | At least three event types are supported | **Verified** — four |
-| 5 | Normalized events carry `sourceLogId` | **Verified** — every one resolves |
-| 6 | Normalization logic is unit tested | **Verified** — 25 tests, real-log fixtures |
-| 7 | Unparseable lines are not discarded | **Verified** — stored with `parsed: false` |
-| 8 | Collection survives Firestore failure | **Verified** — unit tested |
-| 9 | Increment 1 is unaffected | **Verified** — e2e re-run green |
+| #   | Criterion                                     | Status                                     |
+| --- | --------------------------------------------- | ------------------------------------------ |
+| 1   | Raw log messages are stored in `networkLogs/` | **Verified** — 78 lines in one run         |
+| 2   | The original text is preserved unmodified     | **Verified** — asserted on every document  |
+| 3   | Logs are normalized into `networkEvents/`     | **Verified**                               |
+| 4   | At least three event types are supported      | **Verified** — four                        |
+| 5   | Normalized events carry `sourceLogId`         | **Verified** — every one resolves          |
+| 6   | Normalization logic is unit tested            | **Verified** — 25 tests, real-log fixtures |
+| 7   | Unparseable lines are not discarded           | **Verified** — stored with `parsed: false` |
+| 8   | Collection survives Firestore failure         | **Verified** — unit tested                 |
+| 9   | Increment 1 is unaffected                     | **Verified** — e2e re-run green            |
 
 ---
 
@@ -300,7 +316,7 @@ the far end of the link corroborated:
 - Router stopped: only r2 reports. r3 says nothing and is unreachable - a failed
   device cannot report its own failure.
 
-Each root cause also states what it *predicts* should be unreachable, derived by
+Each root cause also states what it _predicts_ should be unreachable, derived by
 removing the failed link or device from the topology graph, and stores that next
 to what was observed:
 
@@ -321,6 +337,7 @@ predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
 ### What was built
 
 `services/incident-service/`
+
 - `src/config/topology.ts` - adjacency, router-id mapping, and graph reachability
 - `src/correlation/rootCause.ts` - the link-vs-device inference and its self-check
 - `src/correlation/correlator.ts` - grouping, settle window, lifecycle
@@ -366,16 +383,16 @@ predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
 
 ## Acceptance criteria — Increment 3
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | Related events correlate into one incident | **Verified** |
-| 2 | Incidents carry a probable root cause | **Verified** |
-| 3 | A link failure is distinguished from a device failure | **Verified** — the headline result |
-| 4 | Correlation is deterministic and explainable | **Verified** — evidence stored in plain language |
-| 5 | Incidents resolve when the network recovers | **Verified** |
-| 6 | Incidents trace back to their events and raw logs | **Verified** |
-| 7 | Correlation logic is unit tested | **Verified** — 39 tests on captured sequences |
-| 8 | Increments 1 and 2 unaffected | **Verified** — both e2e re-run green |
+| #   | Criterion                                             | Status                                           |
+| --- | ----------------------------------------------------- | ------------------------------------------------ |
+| 1   | Related events correlate into one incident            | **Verified**                                     |
+| 2   | Incidents carry a probable root cause                 | **Verified**                                     |
+| 3   | A link failure is distinguished from a device failure | **Verified** — the headline result               |
+| 4   | Correlation is deterministic and explainable          | **Verified** — evidence stored in plain language |
+| 5   | Incidents resolve when the network recovers           | **Verified**                                     |
+| 6   | Incidents trace back to their events and raw logs     | **Verified**                                     |
+| 7   | Correlation logic is unit tested                      | **Verified** — 39 tests on captured sequences    |
+| 8   | Increments 1 and 2 unaffected                         | **Verified** — both e2e re-run green             |
 
 ---
 
@@ -394,6 +411,7 @@ Health, Layer 0 or Incident services.
 ### What was built
 
 `services/agent-service/`
+
 - Responses API client pinned to `gpt-5.6-luna`, `reasoning.effort: low`,
   structured JSON output and `store: false`
 - one deterministic run id per incident diagnosis version, preventing
@@ -406,6 +424,7 @@ Health, Layer 0 or Incident services.
 - API, timeout, output-validation and Firestore failures isolated per run
 
 `apps/web/`
+
 - live GPT investigator panel showing work in progress, baseline vs model
   conclusion, agreement/disagreement, reasoning, usage and cost
 - expandable cited events that lead to the original raw device line
@@ -431,7 +450,7 @@ scenarios and asserts the full evidence and accounting contract when an
   event/log evidence references, the full prompt, a completion timestamp and
   the expected credential error, then shut down cleanly.
 - New shell and Node e2e/assertion scripts pass syntax checks; `git diff
-  --check` is clean.
+--check` is clean.
 - The paid live-model e2e passed against both real lab scenarios on 2026-08-26:
   Luna correctly identified the R2–R3 link failure and the R3 router failure,
   agreed with both deterministic conclusions, cited real events and logs, and
@@ -439,17 +458,17 @@ scenarios and asserts the full evidence and accounting contract when an
 
 ## Acceptance criteria — Increment 4
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | `agentRuns/` document created per diagnosis | **Verified against the Firestore emulator** |
-| 2 | Inspected and cited event/log ids resolve | **Verified against both real scenarios** |
-| 3 | Conclusion stored beside baseline with agreement | **Verified — Luna agreed with both baselines** |
-| 4 | Both real fault scenarios produce different conclusions | **Verified against the live API** |
-| 5 | Token usage, latency and cost recorded | **Verified against the live API** |
-| 6 | API failure records a failed run without disturbing monitoring | **Verified against the Firestore emulator** |
-| 7 | Dashboard shows agent lifecycle and result live | **Verified; interactive visualizer implemented** |
-| 8 | No credentials committed | Verified |
-| 9 | Increments 1–3 remain green | **Verified — full 96-test regression suite passes** |
+| #   | Criterion                                                      | Status                                              |
+| --- | -------------------------------------------------------------- | --------------------------------------------------- |
+| 1   | `agentRuns/` document created per diagnosis                    | **Verified against the Firestore emulator**         |
+| 2   | Inspected and cited event/log ids resolve                      | **Verified against both real scenarios**            |
+| 3   | Conclusion stored beside baseline with agreement               | **Verified — Luna agreed with both baselines**      |
+| 4   | Both real fault scenarios produce different conclusions        | **Verified against the live API**                   |
+| 5   | Token usage, latency and cost recorded                         | **Verified against the live API**                   |
+| 6   | API failure records a failed run without disturbing monitoring | **Verified against the Firestore emulator**         |
+| 7   | Dashboard shows agent lifecycle and result live                | **Verified; interactive visualizer implemented**    |
+| 8   | No credentials committed                                       | Verified                                            |
+| 9   | Increments 1–3 remain green                                    | **Verified — full 96-test regression suite passes** |
 
 ### Operator visualizer update
 

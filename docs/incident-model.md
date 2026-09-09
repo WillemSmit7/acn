@@ -95,12 +95,16 @@ not.
 
 | Scenario | Expected symptoms | Expected root cause | Confidence |
 |----------|-------------------|---------------------|------------|
-| `01-link-failure` | r3 + pc2 unreachable | R2 <-> R3 link failure | `confirmed` |
-| `02-router-failure` | r3 + pc2 unreachable | R3 device failure | `probable` |
-| `03-restore-network` | all reachable | incidents resolve | n/a |
+| `01-configuration-drift` | intended and running config differ | configuration drift | `confirmed` |
+| `02-routing-session-failure` | OSPF session down while interface is up | routing-session failure | `confirmed` |
+| `03-interface-disabled` | logical port administratively down | interface misconfiguration | `confirmed` |
+| `04-routing-service-crash` | ospfd absent while router remains alive | routing-service failure | `confirmed` |
+| `05-resource-exhaustion` | CPU pressure starves ospfd | resource exhaustion | `confirmed` |
+| `06-restore-network` | intended baseline restored | incidents resolve | n/a |
 
-`./scripts/e2e-incidents.sh` runs 01 and 02 in sequence and asserts that they
-produce *different* root causes from *identical* observed symptoms.
+`npm run test:e2e:failure-categories` verifies all five evidence and diagnosis
+paths locally without using model credits. `./scripts/e2e-incidents.sh` is the
+slower live-lab counterpart.
 
 ## What Layer 0 and the Incident Service each refuse to do
 

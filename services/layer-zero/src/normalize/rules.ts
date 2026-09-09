@@ -33,6 +33,14 @@ const OSPF_ADJACENCY =
   /^AdjChg: Nbr (\S+), NbrIP (\S+) \((\S+)\) on ([^:\s]+):(\S+): (\w+) -> (\w+) \((\w+)\)$/;
 
 /**
+ * Local scenario probes write a structured observation only after reading the
+ * changed state back from the router. The line still passes through the raw
+ * log pipeline, so the deterministic diagnosis and the agent can cite the
+ * exact evidence rather than trusting the controller action record.
+ */
+const ACN_MONITOR_EVENT = /^EVENT type=([a-z_]+)((?: [A-Za-z][A-Za-z0-9]*=[^\s]+)*)$/;
+
+/**
  * OSPF neighbour states that mean the adjacency is gone. The intermediate
  * states of a forming adjacency (Init, ExStart, Exchange, Loading) are
  * transitional bookkeeping: a single link recovery walks through all four, and
@@ -51,6 +59,16 @@ const SEVERITY: Record<string, Severity> = {
   interface_up: 'info',
   ospf_neighbor_down: 'warning',
   ospf_neighbor_up: 'info',
+  configuration_drift: 'warning',
+  configuration_restored: 'info',
+  routing_session_down: 'warning',
+  routing_session_up: 'info',
+  interface_admin_down: 'warning',
+  interface_admin_up: 'info',
+  routing_service_down: 'critical',
+  routing_service_up: 'info',
+  resource_exhaustion: 'critical',
+  resource_recovered: 'info',
 };
 
 /**
@@ -59,8 +77,56 @@ const SEVERITY: Record<string, Severity> = {
  */
 export function normalize(deviceId: string, line: ParsedLogLine): UnlinkedEvent | null {
   return (
-    interfaceRule(deviceId, line) ?? ospfAdjacencyRule(deviceId, line) ?? null
+    interfaceRule(deviceId, line) ??
+    ospfAdjacencyRule(deviceId, line) ??
+    acnMonitorRule(deviceId, line) ??
+    null
   );
+}
+
+const MONITOR_EVENT_TYPES = new Set([
+  'configuration_drift',
+  'configuration_restored',
+  'routing_session_down',
+  'routing_session_up',
+  'interface_admin_down',
+  'interface_admin_up',
+  'routing_service_down',
+  'routing_service_up',
+  'resource_exhaustion',
+  'resource_recovered',
+]);
+
+function acnMonitorRule(deviceId: string, line: ParsedLogLine): UnlinkedEvent | null {
+  if (line.daemon !== 'ACNMON') return null;
+  const match = ACN_MONITOR_EVENT.exec(line.message);
+  if (match === null) return null;
+
+  const eventType = match[1];
+  if (eventType === undefined || !MONITOR_EVENT_TYPES.has(eventType)) return null;
+
+  const attributes: Record<string, unknown> = {};
+  for (const token of (match[2] ?? '').trim().split(/\s+/)) {
+    if (token.length === 0) continue;
+    const separator = token.indexOf('=');
+    if (separator <= 0) continue;
+    const key = token.slice(0, separator);
+    const encodedValue = token.slice(separator + 1);
+    try {
+      attributes[key] = decodeURIComponent(encodedValue);
+    } catch {
+      attributes[key] = encodedValue;
+    }
+  }
+
+  return {
+    deviceId,
+    eventType: eventType as UnlinkedEvent['eventType'],
+    severity: SEVERITY[eventType] ?? 'warning',
+    attributes,
+    source: 'layer-zero',
+    occurredAt: line.loggedAt,
+  };
 }
 
 function interfaceRule(deviceId: string, line: ParsedLogLine): UnlinkedEvent | null {

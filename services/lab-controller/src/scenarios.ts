@@ -1,6 +1,12 @@
 import { basename, dirname, resolve } from 'node:path';
 
-export type ScenarioId = 'link-failure' | 'router-failure' | 'restore';
+export type FailureScenarioId =
+  | 'configuration-drift'
+  | 'routing-session-failure'
+  | 'interface-disabled'
+  | 'routing-service-crash'
+  | 'resource-exhaustion';
+export type ScenarioId = FailureScenarioId | 'restore';
 
 export interface ScenarioDefinition {
   id: ScenarioId;
@@ -17,29 +23,50 @@ const repoRoot =
     : workingDirectory;
 
 export const SCENARIOS: Readonly<Record<ScenarioId, ScenarioDefinition>> = {
-  'link-failure': {
-    id: 'link-failure',
-    label: 'Break R2–R3 link',
-    description: 'Administratively shuts R2 eth2; r3 and pc2 should become unreachable.',
+  'configuration-drift': {
+    id: 'configuration-drift',
+    label: 'Introduce config drift',
+    description: 'Changes the intended OSPF cost on R2 eth2 and verifies the drift.',
     tone: 'danger',
-    scriptPath: resolve(repoRoot, 'lab/scenarios/01-link-failure.sh'),
+    scriptPath: resolve(repoRoot, 'lab/scenarios/01-configuration-drift.sh'),
   },
-  'router-failure': {
-    id: 'router-failure',
-    label: 'Stop R3 router',
-    description: 'Stops the R3 container; r3 and pc2 show the same ICMP symptoms.',
+  'routing-session-failure': {
+    id: 'routing-session-failure',
+    label: 'Break OSPF session',
+    description: 'Makes R2 eth2 passive in OSPF while the interface remains up.',
     tone: 'danger',
-    scriptPath: resolve(repoRoot, 'lab/scenarios/02-router-failure.sh'),
+    scriptPath: resolve(repoRoot, 'lab/scenarios/02-routing-session-failure.sh'),
+  },
+  'interface-disabled': {
+    id: 'interface-disabled',
+    label: 'Disable R2 eth2',
+    description: 'Administratively disables the R2 logical port toward R3.',
+    tone: 'danger',
+    scriptPath: resolve(repoRoot, 'lab/scenarios/03-interface-disabled.sh'),
+  },
+  'routing-service-crash': {
+    id: 'routing-service-crash',
+    label: 'Stop R3 ospfd',
+    description: 'Stops only the OSPF daemon while the R3 router remains alive.',
+    tone: 'danger',
+    scriptPath: resolve(repoRoot, 'lab/scenarios/04-routing-service-crash.sh'),
+  },
+  'resource-exhaustion': {
+    id: 'resource-exhaustion',
+    label: 'Exhaust R3 control-plane CPU',
+    description: 'Applies bounded CPU pressure that starves the R3 OSPF service.',
+    tone: 'danger',
+    scriptPath: resolve(repoRoot, 'lab/scenarios/05-resource-exhaustion.sh'),
   },
   restore: {
     id: 'restore',
     label: 'Restore network',
-    description: 'Starts stopped nodes, restores links and waits for OSPF convergence.',
+    description: 'Removes every injected fault and returns FRR to the intended baseline.',
     tone: 'restore',
-    scriptPath: resolve(repoRoot, 'lab/scenarios/03-restore-network.sh'),
+    scriptPath: resolve(repoRoot, 'lab/scenarios/06-restore-network.sh'),
   },
 };
 
 export function isScenarioId(value: string): value is ScenarioId {
-  return value === 'link-failure' || value === 'router-failure' || value === 'restore';
+  return Object.hasOwn(SCENARIOS, value);
 }

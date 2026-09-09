@@ -50,7 +50,17 @@ export type LogEventType =
   | 'interface_down'
   | 'interface_up'
   | 'ospf_neighbor_down'
-  | 'ospf_neighbor_up';
+  | 'ospf_neighbor_up'
+  | 'configuration_drift'
+  | 'configuration_restored'
+  | 'routing_session_down'
+  | 'routing_session_up'
+  | 'interface_admin_down'
+  | 'interface_admin_up'
+  | 'routing_service_down'
+  | 'routing_service_up'
+  | 'resource_exhaustion'
+  | 'resource_recovered';
 
 export type Severity = 'critical' | 'warning' | 'info';
 

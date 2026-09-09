@@ -87,8 +87,8 @@ Everything is an `onSnapshot` listener, so the page reacts to the lab rather
 than polling. Run the scenarios in a terminal and watch:
 
 ```bash
-./lab/scenarios/01-link-failure.sh     # incident appears within a check interval
-./lab/scenarios/03-restore-network.sh  # incident resolves
+./lab/scenarios/03-interface-disabled.sh # incident appears within a check interval
+./lab/scenarios/06-restore-network.sh    # incident resolves
 ```
 
 `healthChecks`, `networkLogs` and `networkEvents` are append-only and unbounded,

@@ -1,4 +1,13 @@
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import {
+  Component,
+  ChangeDetectorRef,
+  HostListener,
+  OnInit,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { LabControlService, type ScenarioId } from '../lab-control.service';
 import type {
   AgentRun,
@@ -22,6 +31,14 @@ interface TimelineEntry {
   problem: boolean;
 }
 
+interface FaultDialogState {
+  stage: 'confirm' | 'pending' | 'result';
+  scenarioId: ScenarioId;
+  label: string;
+  success?: boolean;
+  message?: string;
+}
+
 @Component({
   selector: 'acn-operations-console',
   standalone: true,
@@ -42,8 +59,8 @@ interface TimelineEntry {
         @for (scenario of control.scenarios(); track scenario.id) {
           <button
             [class.restore]="scenario.tone === 'restore'"
-            [disabled]="control.busy() || control.sending() !== null"
-            (click)="trigger(scenario.id, scenario.label)">
+            [disabled]="control.busy() || control.sending() !== null || dialog() !== null"
+            (click)="trigger(scenario.id, scenario.label, $event)">
             <strong>{{ control.sending() === scenario.id ? 'Starting…' : scenario.label }}</strong>
             <span>{{ scenario.description }}</span>
           </button>
@@ -95,6 +112,48 @@ interface TimelineEntry {
           </li>
         }
       </ol>
+    }
+
+
+    @if (dialog(); as dialog) {
+      <div class="dialog-backdrop">
+        <section
+          class="fault-dialog"
+          [class.success]="dialog.stage === 'result' && dialog.success"
+          [class.failed]="dialog.stage === 'result' && !dialog.success"
+          role="dialog"
+          tabindex="-1"
+          aria-modal="true"
+          aria-labelledby="fault-dialog-title"
+          aria-describedby="fault-dialog-description">
+          @if (dialog.stage === 'confirm') {
+            <span class="dialog-kicker">Confirm fault injection</span>
+            <h3 id="fault-dialog-title">Run {{ dialog.label }}?</h3>
+            <p id="fault-dialog-description">
+              This changes the local network lab. The dashboard will keep showing progress in the timeline.
+            </p>
+            <div class="dialog-actions">
+              <button class="secondary" type="button" (click)="dismissDialog()">Cancel</button>
+              <button class="danger" type="button" (click)="confirmFault()">Run fault</button>
+            </div>
+          } @else if (dialog.stage === 'pending') {
+            <span class="dialog-kicker">Contacting lab controller</span>
+            <h3 id="fault-dialog-title">Starting {{ dialog.label }}</h3>
+            <p id="fault-dialog-description" role="status">Please wait while the request is submitted.</p>
+          } @else {
+            <span class="dialog-kicker">{{ dialog.success ? 'Request accepted' : 'Request failed' }}</span>
+            <h3 id="fault-dialog-title">
+              {{ dialog.success
+                ? (dialog.scenarioId === 'restore' ? 'Network restore started' : 'Fault injection started')
+                : (dialog.scenarioId === 'restore' ? 'Network restore failed' : 'Fault injection failed') }}
+            </h3>
+            <p id="fault-dialog-description">{{ dialog.message }}</p>
+            <div class="dialog-actions">
+              <button class="primary" type="button" (click)="dismissDialog()">Done</button>
+            </div>
+          }
+        </section>
+      </div>
     }
   `,
   styles: [`
@@ -153,6 +212,31 @@ interface TimelineEntry {
     .timeline li.bad { border-left-color: var(--bad); background: #21151a; }
     .timeline li.ai { border-left-color: #b884f4; background: #1d1726; }
     .empty { color: var(--muted); }
+    .dialog-backdrop {
+      position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+      padding: 1rem; background: rgb(5 8 12 / 74%);
+    }
+    .fault-dialog {
+      width: min(29rem, 100%); padding: 1.2rem; border: 1px solid var(--line);
+      border-top: 3px solid var(--warn); border-radius: 10px; background: var(--panel);
+      box-shadow: 0 1.2rem 3.5rem rgb(0 0 0 / 55%);
+    }
+    .fault-dialog.success { border-top-color: var(--ok); }
+    .fault-dialog.failed { border-top-color: var(--bad); }
+    .dialog-kicker {
+      display: block; margin-bottom: 0.35rem; color: var(--accent);
+      font: 0.65rem var(--mono); text-transform: uppercase;
+    }
+    .fault-dialog h3 { font-size: 1rem; }
+    .fault-dialog p { margin-top: 0.55rem; font-size: 0.8rem; line-height: 1.5; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+    .dialog-actions button {
+      padding: 0.45rem 0.8rem; border: 1px solid var(--line); border-radius: 6px;
+      color: var(--text); background: var(--panel-2); cursor: pointer;
+    }
+    .dialog-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dialog-actions .danger { border-color: #7c3b50; background: var(--bad-bg); }
+    .dialog-actions .primary { border-color: #286849; background: var(--ok-bg); }
     @media (max-width: 760px) {
       .scenario-grid { grid-template-columns: 1fr; }
       .timeline li { grid-template-columns: 4.5rem 5.2rem 1fr; }
@@ -169,7 +253,10 @@ export class OperationsConsoleComponent implements OnInit {
   readonly agentRuns = input.required<AgentRun[]>();
   readonly actions = input.required<LabAction[]>();
   readonly control = inject(LabControlService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   readonly filter = signal<Filter>('all');
+  readonly dialog = signal<FaultDialogState | null>(null);
+  private previousFocus: HTMLElement | null = null;
   readonly filterOptions: { id: Filter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'problems', label: 'Problems' },
@@ -192,13 +279,58 @@ export class OperationsConsoleComponent implements OnInit {
 
   ngOnInit(): void { this.control.start(); }
 
-  trigger(id: ScenarioId, label: string): void {
-    if (id !== 'restore' && !window.confirm(`Trigger “${label}” in the local lab?`)) return;
-    void this.control.trigger(id);
+  trigger(id: ScenarioId, label: string, event: Event): void {
+    this.previousFocus = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    if (id === 'restore') {
+      void this.runScenario(id, label);
+      return;
+    }
+    this.dialog.set({ stage: 'confirm', scenarioId: id, label });
+    this.focusDialog();
+  }
+
+  confirmFault(): void {
+    const dialog = this.dialog();
+    if (dialog?.stage !== 'confirm') return;
+    void this.runScenario(dialog.scenarioId, dialog.label);
+  }
+
+  dismissDialog(): void {
+    if (this.dialog()?.stage === 'pending') return;
+    this.dialog.set(null);
+    setTimeout(() => this.previousFocus?.focus());
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.dismissDialog();
   }
 
   time(value: Date | null): string {
     return value === null ? '--:--:--' : value.toTimeString().slice(0, 8);
+  }
+
+  private async runScenario(id: ScenarioId, label: string): Promise<void> {
+    this.dialog.set({ stage: 'pending', scenarioId: id, label });
+    const result = await this.control.trigger(id);
+    const action = id === 'restore' ? 'network restore' : 'fault injection';
+    this.dialog.set({
+      stage: 'result',
+      scenarioId: id,
+      label,
+      success: result.ok,
+      message: result.ok
+        ? `“${label}” was accepted by the local lab controller. Follow its progress in the timeline.`
+        : `The ${action} “${label}” could not be started. ${result.error ?? 'The controller did not provide a reason.'}`,
+    });
+    this.focusDialog();
+  }
+
+  private focusDialog(): void {
+    this.changeDetector.detectChanges();
+    const target = document.querySelector<HTMLButtonElement>('.fault-dialog button') ??
+      document.querySelector<HTMLElement>('.fault-dialog');
+    target?.focus();
   }
 }
 

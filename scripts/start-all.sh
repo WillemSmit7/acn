@@ -89,7 +89,7 @@ port_open() {
 
 is_acn_controller() {
   curl --silent --show-error --max-time 1 "http://127.0.0.1:8787/api/status" 2>/dev/null |
-    grep -q '"link-failure"'
+    grep -q '"configuration-drift"'
 }
 
 is_acn_visualizer() {
