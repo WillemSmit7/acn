@@ -9,6 +9,7 @@
     "services/incident-service",
     "services/agent-service",
     "services/lab-controller",
+    "services/network-controller",
     "apps/web"
   ],
   "scripts": {
@@ -23,7 +24,7 @@
     "emulators": "firebase emulators:start",
     "health-service": "npm run dev --workspace services/health-service",
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspace services/health-service --workspace services/layer-zero --workspace services/incident-service --workspace services/agent-service --workspace services/lab-controller",
+    "test": "npm run test --workspace services/health-service --workspace services/layer-zero --workspace services/incident-service --workspace services/agent-service --workspace services/lab-controller --workspace services/network-controller",
     "test:e2e:failure-categories": "npm run build --workspace services/layer-zero --workspace services/incident-service --workspace services/agent-service && node scripts/e2e-failure-categories.mjs",
     "test:e2e:evaluation-boundary": "npm run build --workspace services/agent-service --workspace services/lab-controller && node scripts/e2e-evaluation-boundary.mjs",
     "layer-zero": "npm run dev --workspace services/layer-zero",

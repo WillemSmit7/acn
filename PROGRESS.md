@@ -585,3 +585,24 @@ Implemented on `5-increment-5-gpt-evidence-first-root-cause`:
 The detailed trust boundaries and exit criteria are in
 `docs/increment-5-plan.md`. Controlled remediation moves to Increment 6 and
 must retain a separate allow-listed action and approval boundary.
+
+## Increment 6 — guarded AI remediation
+
+Started on `6-increment-6-guarded-ai-remediation`. The approved design is in
+`docs/increment-6-plan.md` and the first safety-contract slice is implemented:
+
+- a separate Network Controller package owns the only future mutation boundary;
+- GPT-facing requests are limited to five fixed repair intents or explicit
+  escalation, with no caller-controlled target or command fields;
+- strict parsing rejects unknown fields, arbitrary commands, arbitrary targets,
+  invalid IDs and unbounded evidence lists;
+- deterministic idempotency prevents duplicate proposals from executing twice;
+- every mutation requires human approval and an incident-version recheck;
+- preflight must prove the expected fault is still present;
+- success requires observer recovery evidence, never only command exit zero;
+- ordered audit transitions cover proposed, approved, executing, verifying and
+  terminal states.
+
+The live device adapter, Firestore repository, approval API, model proposal and
+dashboard approval card remain the next implementation slices. No live network
+mutation is connected yet.
