@@ -112,12 +112,26 @@ export class AgentService {
 }
 
 export function evaluate(
-  groundTruth: { rootCauseType: string; rootCauseDevices: string[] },
+  groundTruth: {
+    rootCauseType: string;
+    rootCauseDevices: string[];
+    expectedRemediationTool: string;
+  },
   conclusion: AgentConclusion,
-): { typeMatch: boolean; devicesMatch: boolean; overallMatch: boolean } {
+): {
+  typeMatch: boolean;
+  devicesMatch: boolean;
+  remediationMatch: boolean;
+  overallMatch: boolean;
+} {
   const typeMatch = groundTruth.rootCauseType === conclusion.rootCauseType;
   const devicesMatch = sameStrings(groundTruth.rootCauseDevices, conclusion.rootCauseDevices);
-  return { typeMatch, devicesMatch, overallMatch: typeMatch && devicesMatch };
+  const remediationMatch = groundTruth.expectedRemediationTool ===
+    conclusion.remediationProposal.tool;
+  return {
+    typeMatch, devicesMatch, remediationMatch,
+    overallMatch: typeMatch && devicesMatch && remediationMatch,
+  };
 }
 
 export function validateCitations(
@@ -136,6 +150,13 @@ export function validateCitations(
   }
   if (logIds.length > 0 && conclusion.citedLogIds.length === 0) {
     throw new Error('Model cited no raw logs although raw log evidence was supplied');
+  }
+  const cited = new Set([...conclusion.citedEventIds, ...conclusion.citedLogIds]);
+  if (conclusion.remediationProposal.citedEvidenceIds.length === 0) {
+    throw new Error('Remediation proposal cited no evidence');
+  }
+  for (const id of conclusion.remediationProposal.citedEvidenceIds) {
+    if (!cited.has(id)) throw new Error(`Remediation proposal cited unsupported evidence id ${id}`);
   }
 }
 

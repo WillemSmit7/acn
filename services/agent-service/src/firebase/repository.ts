@@ -151,6 +151,7 @@ export class AgentRepository implements AgentRepositoryPort {
     return {
       rootCauseType: expected['rootCauseType'],
       rootCauseDevices: stringArray(expected['rootCauseDevices']),
+      expectedRemediationTool: remediationTool(expected['expectedRemediationTool']),
     };
   }
 
@@ -265,6 +266,14 @@ function isRootCauseType(value: unknown): value is RootCauseType {
     value === 'routing_service_failure' ||
     value === 'resource_exhaustion' ||
     value === 'unknown';
+}
+
+function remediationTool(value: unknown): LabGroundTruth['expectedRemediationTool'] {
+  if (typeof value === 'string' && [
+    'restore_ospf_cost', 'restore_ospf_adjacency', 'enable_interface',
+    'restart_routing_service', 'restore_resource_profile',
+  ].includes(value)) return value as LabGroundTruth['expectedRemediationTool'];
+  return 'escalate_no_safe_action';
 }
 
 function stringArray(value: unknown): string[] {

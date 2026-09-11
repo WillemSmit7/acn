@@ -597,12 +597,12 @@ Started on `6-increment-6-guarded-ai-remediation`. The approved design is in
 - strict parsing rejects unknown fields, arbitrary commands, arbitrary targets,
   invalid IDs and unbounded evidence lists;
 - deterministic idempotency prevents duplicate proposals from executing twice;
-- every mutation requires human approval and an incident-version recheck;
-- preflight must prove the expected fault is still present;
+- every mutation requires a human to choose Run;
+- the harness records before-state but does not algorithmically overrule GPT;
 - success requires observer recovery evidence, never only command exit zero;
 - ordered audit transitions cover proposed, approved, executing, verifying and
   terminal states.
 
-The live device adapter, Firestore repository, approval API, model proposal and
+The live device adapter, Firestore repository, human-run API, model proposal and
 dashboard approval card remain the next implementation slices. No live network
 mutation is connected yet.

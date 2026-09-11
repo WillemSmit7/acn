@@ -40,6 +40,7 @@ test('one blind diagnosis is claimed once and scored only after model completion
   assert.equal(repository.completions.length, 1);
   assert.deepEqual(repository.completions[0]?.groundTruth, {
     rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'],
+    expectedRemediationTool: 'enable_interface',
   });
   assert.equal(repository.completions[0]?.evaluation?.overallMatch, true);
   assert.doesNotMatch(repository.analyzing[0]?.prompt.input ?? '', /deterministicBaseline/);
@@ -86,7 +87,11 @@ class FakeRepository implements AgentRepositoryPort {
 
   constructor(private readonly truth: {
     rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
-  } | null = { rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'] }) {}
+    expectedRemediationTool: 'enable_interface';
+  } | null = {
+    rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'],
+    expectedRemediationTool: 'enable_interface',
+  }) {}
 
   watchIncidents(onIncidents: (incidents: InvestigableIncident[]) => void): () => void {
     this.listener = onIncidents;
@@ -110,6 +115,7 @@ class FakeRepository implements AgentRepositoryPort {
 
   async loadGroundTruth(): Promise<{
     rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
+    expectedRemediationTool: 'enable_interface';
   } | null> {
     return this.truth;
   }

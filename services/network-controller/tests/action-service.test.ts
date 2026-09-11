@@ -1,14 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GuardedActionService, GuardRejectedError } from '../src/action-service.js';
+import { GuardedActionService } from '../src/action-service.js';
 import type {
-  ActionProposal,
   ActionRepositoryPort,
   ActionStatus,
   AgentAction,
   AuditEvent,
-  GuardResult,
-  IncidentGuardPort,
   PreflightResult,
   RemediationExecutorPort,
   RemediationTool,
@@ -51,8 +48,8 @@ test('duplicate proposals return one action and cannot execute twice', async () 
   assert.equal(harness.repository.actions.size, 1);
 });
 
-test('a failed precondition causes no mutation', async () => {
-  const harness = fixture({ preflightSatisfied: false });
+test('an unreadable target causes no mutation', async () => {
+  const harness = fixture({ preflightFails: true });
   const proposed = await harness.service.propose(proposal);
   const completed = await harness.service.approve(proposed.actionId, 'operator');
   assert.equal(completed.status, 'failed');
@@ -68,21 +65,6 @@ test('command success without recovery evidence is failure', async () => {
   assert.match(completed.error ?? '', /not observed/);
 });
 
-test('stale incident version is rejected before mutation', async () => {
-  const harness = fixture();
-  const proposed = await harness.service.propose(proposal);
-  harness.guard.version = 'incident-v2';
-  const completed = await harness.service.approve(proposed.actionId, 'operator');
-  assert.equal(completed.status, 'failed');
-  assert.equal(harness.executor.executions, 0);
-});
-
-test('closed or invalid incidents cannot create proposals', async () => {
-  const harness = fixture({ guardAllowed: false });
-  await assert.rejects(() => harness.service.propose(proposal), GuardRejectedError);
-  assert.equal(harness.repository.actions.size, 0);
-});
-
 test('no-safe-action records escalation without approval or execution', async () => {
   const harness = fixture();
   const action = await harness.service.propose({
@@ -94,27 +76,19 @@ test('no-safe-action records escalation without approval or execution', async ()
 });
 
 function fixture(options: {
-  guardAllowed?: boolean; preflightSatisfied?: boolean; recovered?: boolean;
+  preflightFails?: boolean; recovered?: boolean;
 } = {}) {
   const repository = new MemoryRepository();
-  const guard = new Guard(options.guardAllowed ?? true);
-  const executor = new Executor(options.preflightSatisfied ?? true, options.recovered ?? true);
-  return { repository, guard, executor, service: new GuardedActionService(repository, guard, executor) };
-}
-
-class Guard implements IncidentGuardPort {
-  version = 'incident-v1';
-  constructor(private readonly allowed: boolean) {}
-  async validate(_proposal: ActionProposal): Promise<GuardResult> {
-    return { allowed: this.allowed, reason: this.allowed ? 'open' : 'incident is resolved', incidentVersion: this.version };
-  }
+  const executor = new Executor(options.preflightFails ?? false, options.recovered ?? true);
+  return { repository, executor, service: new GuardedActionService(repository, executor) };
 }
 
 class Executor implements RemediationExecutorPort {
   executions = 0;
-  constructor(private readonly satisfied: boolean, private readonly recovered: boolean) {}
+  constructor(private readonly preflightFails: boolean, private readonly recovered: boolean) {}
   async preflight(_tool: RemediationTool): Promise<PreflightResult> {
-    return { satisfied: this.satisfied, reason: this.satisfied ? 'fault present' : 'state changed', stateDigest: 'before', snapshot: {} };
+    if (this.preflightFails) throw new Error('could not inspect current state');
+    return { stateDigest: 'before', snapshot: {} };
   }
   async execute(_tool: RemediationTool): Promise<void> { this.executions += 1; }
   async verify(_action: AgentAction): Promise<VerificationResult> {

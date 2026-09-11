@@ -39,18 +39,25 @@ test('prompt contains neutral evidence but no deterministic answer or cause labe
 });
 
 test('post-response evaluation scores type and device set independently', () => {
-  const truth = { rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'] };
+  const truth = {
+    rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'],
+    expectedRemediationTool: 'enable_interface',
+  };
   assert.deepEqual(evaluate(truth, agreeingConclusion), {
-    typeMatch: true, devicesMatch: true, overallMatch: true,
+    typeMatch: true, devicesMatch: true, remediationMatch: true, overallMatch: true,
   });
   assert.deepEqual(
     evaluate(truth, { ...agreeingConclusion, rootCauseType: 'routing_service_failure' }),
-    { typeMatch: false, devicesMatch: true, overallMatch: false },
+    { typeMatch: false, devicesMatch: true, remediationMatch: true, overallMatch: false },
   );
   assert.deepEqual(
     evaluate(truth, { ...agreeingConclusion, rootCauseDevices: ['r2'] }),
-    { typeMatch: true, devicesMatch: false, overallMatch: false },
+    { typeMatch: true, devicesMatch: false, remediationMatch: true, overallMatch: false },
   );
+  assert.equal(evaluate(truth, {
+    ...agreeingConclusion,
+    remediationProposal: { ...agreeingConclusion.remediationProposal, tool: 'restore_ospf_cost' },
+  }).remediationMatch, false);
 });
 
 test('citations must resolve to supplied evidence', () => {

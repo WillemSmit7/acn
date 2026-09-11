@@ -68,6 +68,11 @@ export const agreeingConclusion: AgentConclusion = {
   reasoning: ['Both endpoints independently logged the interface and adjacency loss.'],
   citedEventIds: ['evt-r2-ospf', 'evt-r3-ospf'],
   citedLogIds: ['log-r2-ospf', 'log-r3-ospf'],
+  remediationProposal: {
+    tool: 'enable_interface',
+    rationale: 'Restore the observed down interface through the guarded controller.',
+    citedEvidenceIds: ['evt-r2-ospf', 'log-r2-ospf'],
+  },
 };
 
 export function modelResult(conclusion = agreeingConclusion): ModelResult {

@@ -84,6 +84,17 @@ export interface AgentConclusion {
   reasoning: string[];
   citedEventIds: string[];
   citedLogIds: string[];
+  remediationProposal: {
+    tool:
+      | 'restore_ospf_cost'
+      | 'restore_ospf_adjacency'
+      | 'enable_interface'
+      | 'restart_routing_service'
+      | 'restore_resource_profile'
+      | 'escalate_no_safe_action';
+    rationale: string;
+    citedEvidenceIds: string[];
+  };
 }
 
 export interface AgentRun {
@@ -100,10 +111,12 @@ export interface AgentRun {
   labGroundTruth: {
     rootCauseType: AgentConclusion['rootCauseType'];
     rootCauseDevices: string[];
+    expectedRemediationTool: AgentConclusion['remediationProposal']['tool'];
   } | null;
   evaluation: {
     typeMatch: boolean;
     devicesMatch: boolean;
+    remediationMatch: boolean;
     overallMatch: boolean;
   } | null;
   conclusion: AgentConclusion | null;

@@ -96,6 +96,13 @@ for (const [index, scenario] of cases.entries()) {
   const score = evaluate({
     rootCauseType: scenario.rootCauseType,
     rootCauseDevices: rootCause.devices,
+    expectedRemediationTool: ({
+      configuration_drift: 'restore_ospf_cost',
+      routing_session_failure: 'restore_ospf_adjacency',
+      interface_misconfiguration: 'enable_interface',
+      routing_service_failure: 'restart_routing_service',
+      resource_exhaustion: 'restore_resource_profile',
+    })[scenario.rootCauseType],
   }, {
     rootCauseType: scenario.rootCauseType,
     rootCauseDevices: rootCause.devices,
@@ -104,6 +111,17 @@ for (const [index, scenario] of cases.entries()) {
     reasoning: ['Autonomous observer fixture conclusion'],
     citedEventIds: [observed.id],
     citedLogIds: [observed.sourceLogId],
+    remediationProposal: {
+      tool: ({
+        configuration_drift: 'restore_ospf_cost',
+        routing_session_failure: 'restore_ospf_adjacency',
+        interface_misconfiguration: 'enable_interface',
+        routing_service_failure: 'restart_routing_service',
+        resource_exhaustion: 'restore_resource_profile',
+      })[scenario.rootCauseType],
+      rationale: 'Fixture repair selected from neutral evidence.',
+      citedEvidenceIds: [observed.id, observed.sourceLogId],
+    },
   });
   assert.equal(score.overallMatch, true, `${scenario.eventType}: blind conclusion matches truth`);
 

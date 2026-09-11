@@ -53,6 +53,7 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                   @if (run.labGroundTruth; as truth) {
                     <strong>{{ label(truth.rootCauseType) }}</strong>
                     <span class="confidence">{{ truth.rootCauseDevices.join(', ') || 'no device' }}</span>
+                    <span class="confidence">known repair: {{ label(truth.expectedRemediationTool) }}</span>
                   } @else {
                     <strong>Unscored production-style run</strong>
                     <span class="confidence">No controller-created truth was associated</span>
@@ -63,6 +64,9 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                   <h4>GPT investigation</h4>
                   <strong>{{ conclusion.summary }}</strong>
                   <span class="confidence">{{ conclusion.confidence }} confidence</span>
+                  <span class="confidence">
+                    GPT repair guess: {{ label(conclusion.remediationProposal.tool) }}
+                  </span>
                 </div>
                 </div>
 
@@ -70,6 +74,9 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                   <div class="metrics evaluation">
                     <span>{{ evaluation.typeMatch ? '✓' : '✕' }} cause type</span>
                     <span>{{ evaluation.devicesMatch ? '✓' : '✕' }} device set</span>
+                    <span>
+                      {{ evaluation.remediationMatch ? '✓ GPT repair guess correct' : '✕ GPT repair guess incorrect' }}
+                    </span>
                   </div>
                 }
 

@@ -49,6 +49,7 @@ test('runs only a whitelisted scenario and records its streamed output', async (
   assert.equal(repository.finished[0]?.status, 'completed');
   assert.deepEqual(repository.truths[0], {
     rootCauseType: 'configuration_drift', rootCauseDevices: ['r2'],
+    expectedRemediationTool: 'restore_ospf_cost',
   });
 });
 

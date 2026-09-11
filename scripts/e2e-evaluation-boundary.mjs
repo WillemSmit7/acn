@@ -36,6 +36,7 @@ await actionRepository.create(action);
 await actionRepository.finish(action, {
   rootCauseType: 'interface_misconfiguration',
   rootCauseDevices: ['r2'],
+  expectedRemediationTool: 'enable_interface',
 });
 
 const claim = {
@@ -80,6 +81,7 @@ const truth = await agentRepository.loadGroundTruth(claim.runId);
 assert.deepEqual(truth, {
   rootCauseType: 'interface_misconfiguration',
   rootCauseDevices: ['r2'],
+  expectedRemediationTool: 'enable_interface',
 });
 const conclusion = {
   rootCauseType: 'interface_misconfiguration',
@@ -89,6 +91,11 @@ const conclusion = {
   reasoning: ['The observed administrative state differs from intent.'],
   citedEventIds: ['EVT-BLIND-001'],
   citedLogIds: ['LOG-BLIND-001'],
+  remediationProposal: {
+    tool: 'enable_interface',
+    rationale: 'Restore the intended administrative state of the affected interface.',
+    citedEvidenceIds: ['EVT-BLIND-001', 'LOG-BLIND-001'],
+  },
 };
 const score = evaluate(truth, conclusion);
 await agentRepository.completeRun(claim.runId, {
@@ -108,7 +115,7 @@ await agentRepository.completeRun(claim.runId, {
 const completed = (await db.collection('agentRuns').doc(claim.runId).get()).data();
 assert.deepEqual(completed?.['labGroundTruth'], truth);
 assert.deepEqual(completed?.['evaluation'], {
-  typeMatch: true, devicesMatch: true, overallMatch: true,
+  typeMatch: true, devicesMatch: true, remediationMatch: true, overallMatch: true,
 });
 assert.equal(completed?.['agreement'], 'agree');
 

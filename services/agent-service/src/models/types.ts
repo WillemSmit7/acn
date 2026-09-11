@@ -44,11 +44,13 @@ export interface EvidenceBundle {
 export interface LabGroundTruth {
   rootCauseType: RootCauseType;
   rootCauseDevices: string[];
+  expectedRemediationTool: AgentConclusion['remediationProposal']['tool'];
 }
 
 export interface EvaluationScore {
   typeMatch: boolean;
   devicesMatch: boolean;
+  remediationMatch: boolean;
   overallMatch: boolean;
 }
 
@@ -66,6 +68,17 @@ export interface AgentConclusion {
   reasoning: string[];
   citedEventIds: string[];
   citedLogIds: string[];
+  remediationProposal: {
+    tool:
+      | 'restore_ospf_cost'
+      | 'restore_ospf_adjacency'
+      | 'enable_interface'
+      | 'restart_routing_service'
+      | 'restore_resource_profile'
+      | 'escalate_no_safe_action';
+    rationale: string;
+    citedEvidenceIds: string[];
+  };
 }
 
 export interface ModelUsage {

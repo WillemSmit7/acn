@@ -5,25 +5,19 @@ import type {
   ActionRepositoryPort,
   AgentAction,
   AuditEvent,
-  IncidentGuardPort,
   RemediationExecutorPort,
 } from './types.js';
 
-export class GuardRejectedError extends Error {}
 export class ApprovalRequiredError extends Error {}
 
 export class GuardedActionService {
   constructor(
     private readonly repository: ActionRepositoryPort,
-    private readonly incidentGuard: IncidentGuardPort,
     private readonly executor: RemediationExecutorPort,
   ) {}
 
   async propose(input: unknown): Promise<AgentAction> {
     const proposal = parseProposal(input);
-    const guard = await this.incidentGuard.validate(proposal);
-    if (!guard.allowed) throw new GuardRejectedError(guard.reason);
-
     const definition = TOOL_CATALOG[proposal.tool];
     const idempotencyKey = keyFor(proposal);
     const action: AgentAction = {
@@ -34,7 +28,6 @@ export class GuardedActionService {
       risk: definition.risk,
       approvalRequired: definition.approvalRequired,
       status: proposal.tool === 'escalate_no_safe_action' ? 'escalated' : 'proposed',
-      incidentVersion: guard.incidentVersion,
       approvedBy: null,
       preflight: null,
       verification: null,
@@ -54,13 +47,6 @@ export class GuardedActionService {
     if (current.status !== 'proposed') {
       if (current.approvedBy === approver) return current;
       throw new ApprovalRequiredError(`action cannot be approved from ${current.status}`);
-    }
-
-    const guard = await this.incidentGuard.validate(current);
-    if (!guard.allowed || guard.incidentVersion !== current.incidentVersion) {
-      return this.repository.transition(actionId, ['proposed'], {
-        status: 'failed', error: `stale proposal: ${guard.reason}`,
-      }, audit(current, 'policy', 'failed', `stale proposal: ${guard.reason}`));
     }
 
     const approved = await this.repository.transition(actionId, ['proposed'], {
@@ -86,11 +72,6 @@ export class GuardedActionService {
 
     try {
       const preflight = await this.executor.preflight(executing.tool);
-      if (!preflight.satisfied) {
-        return this.repository.transition(action.actionId, ['executing'], {
-          status: 'failed', preflight, error: preflight.reason,
-        }, audit(action, 'policy', 'failed', `precondition failed: ${preflight.reason}`));
-      }
       await this.executor.execute(executing.tool);
       const verifying = await this.repository.transition(action.actionId, ['executing'], {
         status: 'verifying', preflight,

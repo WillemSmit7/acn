@@ -37,15 +37,7 @@ export interface ActionProposal {
   citedEvidenceIds: string[];
 }
 
-export interface GuardResult {
-  allowed: boolean;
-  reason: string;
-  incidentVersion: string | null;
-}
-
 export interface PreflightResult {
-  satisfied: boolean;
-  reason: string;
   stateDigest: string;
   snapshot: Record<string, unknown>;
 }
@@ -64,7 +56,6 @@ export interface AgentAction extends ActionProposal {
   risk: Risk;
   approvalRequired: boolean;
   status: ActionStatus;
-  incidentVersion: string | null;
   approvedBy: string | null;
   preflight: PreflightResult | null;
   verification: VerificationResult | null;
@@ -88,10 +79,6 @@ export interface ActionRepositoryPort {
     patch: Partial<AgentAction>,
     audit: AuditEvent,
   ): Promise<AgentAction>;
-}
-
-export interface IncidentGuardPort {
-  validate(proposal: ActionProposal): Promise<GuardResult>;
 }
 
 export interface RemediationExecutorPort {

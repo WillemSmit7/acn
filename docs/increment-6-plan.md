@@ -3,8 +3,8 @@
 ## Goal
 
 Allow GPT to propose a narrowly typed repair for a diagnosed incident and let a
-separate Network Controller execute it only after policy validation and explicit
-human approval. The model never receives shell, Docker, SSH, PID, path, or
+human choose whether to run it through a small execution harness. The model
+never receives shell, Docker, SSH, PID, path, or
 free-form command access.
 
 ## Safety boundary
@@ -12,16 +12,22 @@ free-form command access.
 The investigator remains evidence-driven. Its structured result may contain at
 most one remediation proposal. A proposal is data, not authority to execute.
 
-Only `services/network-controller` may mutate the network. It independently:
+Only `services/network-controller` may translate the approved repair intent into
+a network mutation. It:
 
-1. validates the exact tool and closed argument schema;
-2. checks that the cited incident is still open and the diagnosis run completed;
-3. reads the current device state and enforces the tool precondition;
-4. requires a distinct human approval for every mutation in Increment 6;
-5. maps the typed request to fixed `execFile` argument arrays owned by code;
-6. waits for fresh autonomous-observer recovery and incident resolution;
-7. records every transition and network change; and
-8. fails closed or escalates when any guard or verification fails.
+1. accepts only an exact tool from the closed repair catalog;
+2. requires a human click before every mutation;
+3. maps the typed request to fixed `execFile` argument arrays owned by code;
+4. captures the state before execution for the experiment record;
+5. waits for fresh autonomous-observer recovery and incident resolution;
+6. records every transition and network change; and
+7. reports either “AI fixed it” or “AI did not fix it.”
+
+The controller does **not** decide whether GPT's diagnosis or repair guess is
+correct and never compares it with a deterministic mapper. The interface scores
+both guesses separately against hidden lab truth. That score is informational
+only and never authorizes or blocks execution. The repair experiment is judged
+by whether the watcher observes recovery afterward.
 
 The Lab Controller stays fault-injection-only and is never used as the AI action
 path.
@@ -30,7 +36,7 @@ path.
 
 The first catalog is deliberately repair-only and fixed to the current lab:
 
-| GPT-visible repair intent | Fixed target | Required precondition | Verified outcome | Risk |
+| GPT-visible repair intent | Fixed target | Lab condition it is designed for | Observed outcome | Risk |
 |---|---|---|---|---|
 | `restore_ospf_cost` | R2 `eth2` | OSPF cost differs from intended 10 | intended cost observed; incident resolves | medium |
 | `restore_ospf_adjacency` | R2 `eth2` | interface is passive while administratively up | passive removed; neighbor recovers; incident resolves | medium |
@@ -57,9 +63,9 @@ Each proposal has a deterministic idempotency key derived from incident, agent
 run and canonical tool call. A repeated or concurrent request returns the same
 record and can never execute twice.
 
-Approval captures the approver, time, incident version and precondition digest.
-Execution rejects stale approvals when the incident resolved, evidence changed,
-or current device state no longer matches the approved precondition.
+Approval captures the approver and time. The harness records current state but
+does not use another diagnosis algorithm to overrule GPT. A wrong allow-listed
+repair may run and fail to recover the incident; that is a valid experiment.
 
 Rollback is not claimed automatically for simple repairs because restoring a
 faulty pre-state would recreate the outage. A tool may expose a guarded
@@ -83,18 +89,18 @@ Network Controller approval endpoint, which applies server-side transitions.
 
 ## Implementation order
 
-1. Define the discriminated tool union, strict validator, risk policy and action
+1. Define the discriminated tool union, strict parser and action
    state machine with rejection tests.
 2. Implement proposal persistence and append-only audit events with transactional
-   idempotency and stale-incident checks.
+   idempotency.
 3. Add GPT's optional single repair proposal to the strict structured output and
    submit it to the controller only after citation validation and diagnosis
    completion.
 4. Build the first vertical slice, `enable_interface`, using fixed Docker/vtysh
-   arguments, read-only preflight and observer-backed verification.
+   arguments, before-state capture and observer-backed outcome measurement.
 5. Add the dashboard approval/rejection card and live action timeline.
 6. Exercise success, rejection, duplicate, invalid-target, missing-approval,
-   precondition mismatch, stale incident, execution timeout and verification
+   target-inspection failure, execution timeout and no-recovery
    failure end to end.
 7. Add the remaining four repair adapters one at a time, each with its own
    precondition and recovery test.
@@ -104,7 +110,7 @@ Network Controller approval endpoint, which applies server-side transitions.
 - Fuzzed or malicious model arguments cannot reach a process invocation.
 - No mutating action executes without a recorded human approval.
 - Concurrent/replayed proposals and approvals execute at most once.
-- A command exit code alone can never mark an action successful.
+- A command exit code alone can never claim the AI fixed the incident.
 - Success requires fresh watcher evidence and incident resolution.
 - Every state transition and network mutation is auditable.
 - Monitoring, correlation and diagnosis continue when the controller fails.

@@ -286,10 +286,12 @@ function toAgentRun({ id, data }: { id: string; data: DocumentData }): AgentRun 
     labGroundTruth: Object.keys(labGroundTruth).length === 0 ? null : {
       rootCauseType: isAgentRootCause(truthType) ? truthType : 'unknown',
       rootCauseDevices: strArray(labGroundTruth['rootCauseDevices']),
+      expectedRemediationTool: remediationTool(labGroundTruth['expectedRemediationTool']),
     },
     evaluation: Object.keys(evaluation).length === 0 ? null : {
       typeMatch: evaluation['typeMatch'] === true,
       devicesMatch: evaluation['devicesMatch'] === true,
+      remediationMatch: evaluation['remediationMatch'] === true,
       overallMatch: evaluation['overallMatch'] === true,
     },
     conclusion: toAgentConclusion(data['conclusion']),
@@ -354,6 +356,7 @@ function toAgentConclusion(value: unknown): AgentConclusion | null {
   if (Object.keys(raw).length === 0) return null;
   const type = str(raw['rootCauseType'], 'unknown');
   const confidence = str(raw['confidence'], 'low');
+  const proposal = object(raw['remediationProposal']);
   return {
     rootCauseType: isAgentRootCause(type) ? type : 'unknown',
     rootCauseDevices: strArray(raw['rootCauseDevices']),
@@ -362,6 +365,11 @@ function toAgentConclusion(value: unknown): AgentConclusion | null {
     reasoning: strArray(raw['reasoning']),
     citedEventIds: strArray(raw['citedEventIds']),
     citedLogIds: strArray(raw['citedLogIds']),
+    remediationProposal: {
+      tool: remediationTool(proposal['tool']),
+      rationale: str(proposal['rationale']),
+      citedEvidenceIds: strArray(proposal['citedEvidenceIds']),
+    },
   };
 }
 
@@ -381,6 +389,15 @@ function isAgentRootCause(value: string): value is AgentConclusion['rootCauseTyp
     value === 'routing_service_failure' ||
     value === 'resource_exhaustion' ||
     value === 'unknown';
+}
+
+function remediationTool(value: unknown): AgentConclusion['remediationProposal']['tool'] {
+  const tool = str(value, 'escalate_no_safe_action');
+  return tool === 'restore_ospf_cost' || tool === 'restore_ospf_adjacency' ||
+    tool === 'enable_interface' || tool === 'restart_routing_service' ||
+    tool === 'restore_resource_profile'
+    ? tool
+    : 'escalate_no_safe_action';
 }
 
 function object(value: unknown): DocumentData {
