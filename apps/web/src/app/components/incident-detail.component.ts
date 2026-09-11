@@ -19,7 +19,13 @@ import type { Incident, NetworkEvent } from '../models';
     @let cause = inc.rootCause;
 
     <div class="detail">
+      <p class="scope-note">
+        <strong>Incident details only.</strong>
+        This is the Incident Service's rule-based record of the observed lab fault.
+        GPT's independent diagnosis appears in the GPT investigations card.
+      </p>
       @if (cause) {
+        <h4>Rule-based incident classification</h4>
         <div class="verdict" [class.confirmed]="cause.confidence === 'confirmed'">
           <div class="summary">{{ cause.summary }}</div>
           <div class="meta">
@@ -28,16 +34,16 @@ import type { Incident, NetworkEvent } from '../models';
           </div>
         </div>
 
-        <h4>Why</h4>
+        <h4>Why the correlator grouped it this way</h4>
         <ul class="evidence">
           @for (line of cause.evidence; track line) {
             <li>{{ line }}</li>
           }
         </ul>
 
-        <h4>Prediction check</h4>
+        <h4>Topology consistency check — not GPT analysis</h4>
         <p class="prediction" [class.match]="cause.predictionMatches">
-          This root cause implies
+          The stored incident classification predicts
           <strong>{{ format(cause.predictedUnreachable) }}</strong>
           should be unreachable; the network actually showed
           <strong>{{ format(cause.observedUnreachable) }}</strong>.
@@ -46,7 +52,7 @@ import type { Incident, NetworkEvent } from '../models';
       }
 
       @if (inc.symptoms.length) {
-        <h4>Symptoms</h4>
+        <h4>Observed incident symptoms</h4>
         <ul class="symptoms">
           @for (symptom of inc.symptoms; track symptom) {
             <li>{{ symptom }}</li>
@@ -54,7 +60,7 @@ import type { Incident, NetworkEvent } from '../models';
         </ul>
       }
 
-      <h4>Evidence trail &mdash; {{ events().length }} of {{ inc.eventCount }} events</h4>
+      <h4>Telemetry attached to this incident &mdash; {{ events().length }} of {{ inc.eventCount }} events</h4>
       @if (events().length < inc.eventCount) {
         <p class="note">
           Older events fall outside the window this page keeps in memory.
@@ -86,6 +92,12 @@ import type { Incident, NetworkEvent } from '../models';
   `,
   styles: [`
     .detail { padding: 0.75rem 1rem 1rem; border-top: 1px solid var(--line); }
+    .scope-note {
+      margin: 0 0 0.8rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line);
+      border-radius: 6px; color: var(--muted); background: var(--panel-2);
+      font-size: 0.78rem; line-height: 1.45;
+    }
+    .scope-note strong { color: var(--text); }
     h4 {
       margin: 1rem 0 0.4rem; font-size: 0.72rem; text-transform: uppercase;
       letter-spacing: 0.08em; color: var(--muted);

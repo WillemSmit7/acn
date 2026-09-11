@@ -79,7 +79,12 @@ import type { Incident } from './models';
 
       <section class="card">
         <div class="card-head">
-          <h2>Incidents</h2>
+          <div>
+            <h2>Detected incident records</h2>
+            <p class="section-note">
+              Rule-based grouping of the fault and telemetry observed in the lab—not GPT analysis.
+            </p>
+          </div>
           <span class="count">
             {{ data.openIncidents().length }} open / {{ data.incidents().length }} total
           </span>
@@ -165,6 +170,8 @@ import type { Incident } from './models';
       border-radius: 10px; padding: 0.9rem 1rem;
     }
     .card-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .card-head h2 { margin-bottom: 0; }
+    .section-note { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.72rem; }
     h2 {
       margin: 0 0 0.7rem; font-size: 0.75rem; text-transform: uppercase;
       letter-spacing: 0.1em; color: var(--muted);
