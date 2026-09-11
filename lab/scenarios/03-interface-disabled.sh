@@ -12,8 +12,4 @@ echo "==> Administratively shutting r2 eth2"
 ${DOCKER} exec clab-acn-r2 vtysh \
   -c 'configure terminal' -c 'interface eth2' -c 'shutdown'
 
-running="$(${DOCKER} exec clab-acn-r2 vtysh -c 'show running-config')"
-grep -A8 '^interface eth2' <<<"${running}" | grep -q 'shutdown'
-emit_monitor_event r2 interface_admin_down \
-  interface=eth2 peer=r3 adminState=down expectedState=up
-echo "==> Probe confirmed r2 eth2 is administratively disabled"
+echo "==> Fault injected; the autonomous observer will detect the administrative state"

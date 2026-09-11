@@ -11,6 +11,8 @@ export interface AppConfig {
   flushIntervalMs: number;
   /** Delay before re-attaching a tail that died. */
   restartDelayMs: number;
+  /** Interval for autonomous read-only router state inspection. */
+  observerIntervalMs: number;
   logLevel: LogLevel;
 }
 
@@ -42,6 +44,7 @@ export function loadConfig(): AppConfig {
     dockerBinary: process.env.DOCKER_BINARY || 'docker',
     flushIntervalMs: intFromEnv('LAYER_ZERO_FLUSH_INTERVAL_MS', 500, 50),
     restartDelayMs: intFromEnv('LAYER_ZERO_RESTART_DELAY_MS', 3000, 100),
+    observerIntervalMs: intFromEnv('LAYER_ZERO_OBSERVER_INTERVAL_MS', 5000, 500),
     logLevel: logLevelFromEnv(),
   };
 }

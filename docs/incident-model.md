@@ -75,8 +75,9 @@ before the first recovery. Two hard-won reasons:
 Once a definite conclusion is reached it is frozen. The diagnosis describes what
 broke; recovery is not evidence about that.
 
-**Resolution follows observed reachability**, deliberately not a tally of faults
-matched against recoveries. That tally is unreliable against real telemetry:
+**Resolution follows the appropriate live signal.** Native link/device outages
+follow observed reachability rather than a tally of log recoveries. That tally
+is unreliable against real telemetry:
 
 - FRR log timestamps have one-second resolution, so an interface down/up pair
   inside the same second can be delivered in either order. Seen "up" first, the
@@ -86,8 +87,10 @@ matched against recoveries. That tally is unreliable against real telemetry:
   the lab is redeployed and the log files are recreated.
 
 The Health Service re-checks reachability every round, so "is anything still
-unreachable" is a self-correcting question where "did every fault get an ack" is
-not.
+unreachable" is self-correcting for connectivity faults. Configuration,
+routing-session, administrative, service, and resource faults may coexist with
+healthy ICMP; those incidents remain open until the autonomous observer emits
+their matching recovery transition.
 
 ## Scenario expectations
 

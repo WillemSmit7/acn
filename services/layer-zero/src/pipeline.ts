@@ -1,6 +1,6 @@
 import type { AppConfig } from './config/env.js';
 import type { LogSourceConfig } from './config/sources.js';
-import type { ProcessedLine } from './models/types.js';
+import type { ProcessedLine, StateObservation } from './models/types.js';
 import type { Logger } from './logger.js';
 import type { LayerZeroRepository } from './firebase/repository.js';
 import { LogTail } from './collector/logTail.js';
@@ -99,6 +99,46 @@ export class LayerZeroPipeline {
     this.pending.push({
       raw: { deviceId: source.deviceId, source: source.source, raw },
       parsed,
+      event,
+    });
+  }
+
+  /**
+   * Queue a transition independently discovered by the read-only state
+   * observer. Its exact command output is retained as evidence just like an
+   * FRR line, but no synthetic line is written into the device log.
+   */
+  handleObservation(observation: StateObservation): void {
+    this.linesSeen += 1;
+    this.eventsEmitted += 1;
+
+    const event: ProcessedLine['event'] = {
+      deviceId: observation.deviceId,
+      eventType: observation.eventType,
+      severity: observation.severity,
+      attributes: observation.attributes,
+      source: 'layer-zero',
+      occurredAt: observation.observedAt,
+    };
+
+    this.logger.line(
+      `EVENT ${event.eventType.toUpperCase()} device=${event.deviceId} ` +
+        `severity=${event.severity} ${summarize(event.attributes)}`,
+    );
+
+    this.pending.push({
+      raw: {
+        deviceId: observation.deviceId,
+        source: 'state-observer',
+        raw: observation.raw,
+      },
+      parsed: {
+        loggedAt: observation.observedAt,
+        daemon: 'ACNOBS',
+        code: 'STATE-00001',
+        errorCode: null,
+        message: `${observation.eventType} ${summarize(observation.attributes)}`.trim(),
+      },
       event,
     });
   }

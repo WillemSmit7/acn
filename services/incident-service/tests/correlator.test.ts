@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Correlator } from '../src/correlation/correlator.js';
+import type { ObservedEvent } from '../src/models/types.js';
 import {
   deviceRecovered,
   deviceUnreachable,
@@ -310,4 +311,67 @@ test('an incident with no unreachability closes itself after the network settles
   correlator.tick(afterSettle(60));
 
   assert.equal(correlator.resolvedIncidents().length, 1);
+});
+
+test('a persistent state fault stays open until its matching recovery is observed', () => {
+  resetClock();
+  const correlator = new Correlator(OPTIONS);
+  const drift: ObservedEvent = {
+    id: 'evt-drift',
+    deviceId: 'r2',
+    eventType: 'configuration_drift',
+    severity: 'warning',
+    source: 'layer-zero',
+    sourceLogId: 'log-drift',
+    attributes: { interface: 'eth2', expected: '10', observed: '65535' },
+    occurredAt: afterSettle(0),
+  };
+  correlator.observe(drift);
+
+  correlator.tick(afterSettle(60));
+  assert.equal(correlator.openIncidents()[0]?.status, 'open');
+  assert.equal(correlator.resolvedIncidents().length, 0);
+
+  correlator.observe({
+    ...drift,
+    id: 'evt-restored',
+    eventType: 'configuration_restored',
+    severity: 'info',
+    occurredAt: afterSettle(61),
+  });
+  correlator.tick(afterSettle(80));
+
+  assert.equal(correlator.openIncidents().length, 0);
+  assert.equal(correlator.resolvedIncidents()[0]?.status, 'resolved');
+});
+
+test('a frozen cause still updates its independently observed impact', () => {
+  resetClock();
+  const correlator = new Correlator(OPTIONS);
+  const fault: ObservedEvent = {
+    id: 'evt-interface-admin',
+    deviceId: 'r2',
+    eventType: 'interface_admin_down',
+    severity: 'warning',
+    source: 'layer-zero',
+    sourceLogId: 'log-interface-admin',
+    attributes: { interface: 'eth2', adminState: 'down' },
+    occurredAt: afterSettle(0),
+  };
+  correlator.observe(fault);
+  correlator.tick(afterSettle(20));
+
+  let incident = correlator.openIncidents()[0];
+  assert.deepEqual(incident?.rootCause.predictedUnreachable, ['pc2', 'r3']);
+  assert.deepEqual(incident?.rootCause.observedUnreachable, []);
+  assert.equal(incident?.rootCause.predictionMatches, false);
+
+  correlator.observe(deviceUnreachable('r3', 21));
+  correlator.observe(deviceUnreachable('pc2', 21));
+  correlator.tick(afterSettle(40));
+
+  incident = correlator.openIncidents()[0];
+  assert.equal(incident?.rootCause.type, 'interface_misconfiguration');
+  assert.deepEqual(incident?.rootCause.observedUnreachable, ['pc2', 'r3']);
+  assert.equal(incident?.rootCause.predictionMatches, true);
 });

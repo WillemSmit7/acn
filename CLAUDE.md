@@ -73,13 +73,13 @@ sudo ip route replace 10.0.0.0/16 via 172.20.20.11               # Willem must r
 ```
 
 Prefer that over `./lab/deploy.sh` when the lab was only route-broken —
-deploy.sh `--reconfigure`s unconditionally. Note `03-restore-network.sh` polls
+deploy.sh `--reconfigure`s unconditionally. Note `06-restore-network.sh` polls
 `ping 10.255.0.3` **from the host**, so it fails without those routes even when
 the lab itself is healthy.
 
-**Stopping a container destroys its veth pairs too** — same symptom, and the
-reason `02-router-failure.sh` was unrecoverable until `03-restore-network.sh`
-learned to redeploy the links after restarting a container.
+The current five-category lab no longer stops whole containers; historical
+whole-router scenarios required topology redeployment because a stopped
+container lost its veth pairs.
 
 ## Environment traps
 
@@ -217,12 +217,14 @@ payoff of Increment 2 — do not let it regress.
 minus the failure) next to what was observed. A diagnosis that does not predict
 the symptoms is worth doubting, so mismatches are recorded, never hidden.
 
-**Never resolve incidents by matching each fault to a recovery.** FRR log
+**Use the appropriate recovery signal.** FRR log
 timestamps have one-second resolution, so a down/up pair in the same second
 arrives in arbitrary order; seen "up" first, the trailing "down" re-opens a
 fault nothing ever clears. Recovery events also vanish when the collector
-reattaches its tail during a redeploy. Resolution follows observed reachability,
-which the Health Service re-checks every round and is therefore self-correcting.
+reattaches its tail during a redeploy. Native connectivity faults therefore
+follow reachability, which the Health Service continuously re-checks. Persistent
+configuration, session, admin, service, and resource faults instead stay open
+until the autonomous observer emits their matching recovery transition.
 
 **Freeze the root cause once it is definite.** Re-inferring after recovery let a
 restored r3 exonerate itself, turning a correct device failure into a

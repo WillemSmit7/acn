@@ -31,6 +31,11 @@ interface OpenIncident {
    * follows reachability instead. See tick().
    */
   outstandingFaults: Set<string>;
+  /**
+   * Faults whose continued existence cannot be inferred from reachability.
+   * They remain open until their explicit recovery observation arrives.
+   */
+  persistentFaults: Set<string>;
   /** True once the root cause has been computed after the settle window. */
   settled: boolean;
   /**
@@ -151,6 +156,7 @@ export class Correlator {
       incident,
       unreachable: new Set(),
       outstandingFaults: new Set(),
+      persistentFaults: new Set(),
       settled: false,
       rootCauseFrozen: false,
       lastFaultAt: event.occurredAt,
@@ -177,6 +183,9 @@ export class Correlator {
       entry.unreachable.add(event.deviceId);
     }
     entry.outstandingFaults.add(faultKey(event));
+    if (isPersistentStateFault(event.eventType)) {
+      entry.persistentFaults.add(faultKey(event));
+    }
     if (event.occurredAt > entry.lastFaultAt) entry.lastFaultAt = event.occurredAt;
 
     this.events.set(event.id, event);
@@ -201,6 +210,7 @@ export class Correlator {
       }
 
       entry.outstandingFaults.delete(key);
+      entry.persistentFaults.delete(key);
       if (event.eventType === 'device_recovered') entry.unreachable.delete(event.deviceId);
 
       entry.incident.eventIds.push(event.id);
@@ -247,20 +257,23 @@ export class Correlator {
         }
       }
 
-      // Resolution follows observed reachability, deliberately NOT a tally of
-      // faults matched against recoveries. Two things make that tally
-      // unreliable against real telemetry:
+      // Native link incidents follow observed reachability rather than a tally
+      // of interface/adjacency recoveries. Two things make that tally unreliable:
       //   - FRR log timestamps have one-second resolution, so an interface
       //     down/up pair inside the same second can be ordered either way. Seen
       //     "up" first, the trailing "down" re-opens a fault nothing will ever
       //     clear, and the incident hangs open forever.
       //   - Recovery events can simply be missed - the collector reattaches its
       //     tail when the lab is redeployed and the log files are recreated.
-      // The Health Service, by contrast, keeps re-checking reachability every
-      // round, so "is anything still unreachable" is a self-correcting question
-      // where "did every fault get an ack" is not.
+      // The Health Service keeps re-checking reachability every round, so it is
+      // self-correcting for those faults. Configuration, session, admin-state,
+      // service, and resource faults can exist while every device still answers;
+      // those remain open until the autonomous observer emits their recovery.
       const quietOfFaults = now.getTime() - entry.lastFaultAt.getTime();
-      const cleared = entry.unreachable.size === 0 && quietOfFaults >= this.options.settleMs;
+      const cleared =
+        entry.unreachable.size === 0 &&
+        entry.persistentFaults.size === 0 &&
+        quietOfFaults >= this.options.settleMs;
       if (cleared && entry.settled && entry.incident.status === 'open') {
         entry.incident.status = 'resolved';
         entry.incident.resolvedAt = entry.incident.lastEventAt;
@@ -287,7 +300,6 @@ export class Correlator {
       .filter((event): event is ObservedEvent => event !== undefined);
 
     entry.incident.symptoms = buildSymptoms(events);
-    if (entry.rootCauseFrozen) return;
 
     // Only the fault phase is evidence about what broke. Events from after the
     // first recovery describe the network coming back, and folding those in is
@@ -300,6 +312,14 @@ export class Correlator {
     const everUnreachable = faultPhase
       .filter((event) => event.eventType === 'device_unreachable')
       .map((event) => event.deviceId);
+
+    if (entry.rootCauseFrozen) {
+      const observed = [...new Set(everUnreachable)].sort();
+      const predicted = entry.incident.rootCause.predictedUnreachable;
+      entry.incident.rootCause.observedUnreachable = observed;
+      entry.incident.rootCause.predictionMatches = sameDevices(predicted, observed);
+      return;
+    }
 
     entry.incident.rootCause = inferRootCause(faultPhase, [...new Set(everUnreachable)]);
   }
@@ -336,6 +356,18 @@ function eventsBeforeRecovery(events: ObservedEvent[]): ObservedEvent[] {
 
 function sameDevices(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((device, index) => device === b[index]);
+}
+
+const PERSISTENT_STATE_FAULTS = new Set([
+  'configuration_drift',
+  'routing_session_down',
+  'interface_admin_down',
+  'routing_service_down',
+  'resource_exhaustion',
+]);
+
+function isPersistentStateFault(eventType: string): boolean {
+  return PERSISTENT_STATE_FAULTS.has(eventType);
 }
 
 function buildSymptoms(events: ObservedEvent[]): string[] {

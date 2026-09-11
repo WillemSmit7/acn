@@ -10,8 +10,8 @@
  * evidence, and Increment 4's agent will be reasoning from this.
  */
 
-/** Where a raw log line came from. Only FRR exists in Increment 2. */
-export type LogSource = 'frr';
+/** Where a raw observation came from. */
+export type LogSource = 'frr' | 'state-observer';
 
 /** A log line exactly as the device emitted it, before interpretation. */
 export interface RawLogLine {
@@ -87,4 +87,15 @@ export interface ProcessedLine {
   parsed: ParsedLogLine | null;
   /** Built by the normalization rules; null when no rule matched. */
   event: Omit<NormalizedEvent, 'sourceLogId'> | null;
+}
+
+/** A typed state transition produced by the autonomous read-only observer. */
+export interface StateObservation {
+  deviceId: string;
+  eventType: LogEventType;
+  severity: Severity;
+  attributes: Record<string, unknown>;
+  /** Exact output returned by the fixed read-only probe. */
+  raw: string;
+  observedAt: Date;
 }

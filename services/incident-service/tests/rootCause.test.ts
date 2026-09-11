@@ -8,6 +8,7 @@ import {
   resetClock,
   routerFailureEvents,
 } from './fixtures.js';
+import type { ObservedEvent } from '../src/models/types.js';
 
 test('both ends reporting means the link failed, not a device', () => {
   resetClock();
@@ -108,4 +109,42 @@ test('an adjacency event naming an unknown router-id is ignored safely', () => {
   resetClock();
   const cause = inferRootCause([ospfDown('r2', '10.255.9.9', 'eth2', 0)], []);
   assert.equal(cause.type, 'unknown');
+});
+
+test('explicit failure impact is predicted independently from observation', () => {
+  const event: ObservedEvent = {
+    id: 'evt-explicit',
+    deviceId: 'r2',
+    eventType: 'interface_admin_down',
+    severity: 'warning',
+    source: 'layer-zero',
+    sourceLogId: 'log-explicit',
+    attributes: { interface: 'eth2', adminState: 'down' },
+    occurredAt: new Date('2026-08-26T20:00:00.000Z'),
+  };
+
+  const cause = inferRootCause([event], []);
+
+  assert.equal(cause.type, 'interface_misconfiguration');
+  assert.deepEqual(cause.predictedUnreachable, ['pc2', 'r3']);
+  assert.deepEqual(cause.observedUnreachable, []);
+  assert.equal(cause.predictionMatches, false);
+});
+
+test('configuration drift independently predicts no reachability loss', () => {
+  const event: ObservedEvent = {
+    id: 'evt-drift',
+    deviceId: 'r2',
+    eventType: 'configuration_drift',
+    severity: 'warning',
+    source: 'layer-zero',
+    sourceLogId: 'log-drift',
+    attributes: { interface: 'eth2', expected: '10', observed: '65535' },
+    occurredAt: new Date('2026-08-26T20:00:00.000Z'),
+  };
+
+  const cause = inferRootCause([event], []);
+
+  assert.deepEqual(cause.predictedUnreachable, []);
+  assert.equal(cause.predictionMatches, true);
 });

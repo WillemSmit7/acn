@@ -20,7 +20,6 @@ export interface LogSourceConfig {
 const FRR_LOG_PATHS = [
   '/var/log/frr/zebra.log',
   '/var/log/frr/ospfd.log',
-  '/var/log/frr/acn-monitor.log',
 ];
 
 /**

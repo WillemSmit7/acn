@@ -72,18 +72,38 @@ function findExplicitFailure(
     const details = Object.entries(event.attributes)
       .map(([key, value]) => `${key}=${String(value)}`)
       .join(', ');
+    const predicted = predictExplicitFailure(event, definition.type);
     return {
       type: definition.type,
       devices: [event.deviceId],
       summary: `${event.deviceId.toUpperCase()} ${definition.label}`,
       confidence: 'confirmed',
       evidence: [
-        `${event.deviceId} monitor observed ${definition.label}${details.length > 0 ? ` (${details})` : ''}`,
+        `${event.deviceId} state observer found ${definition.label}${details.length > 0 ? ` (${details})` : ''}`,
       ],
-      ...comparePrediction(observedUnreachable, observedUnreachable),
+      ...comparePrediction(predicted, observedUnreachable),
     };
   }
   return null;
+}
+
+function predictExplicitFailure(event: ObservedEvent, type: RootCauseType): string[] {
+  // An OSPF cost drift is still a real configuration fault, but this linear
+  // topology has no alternate route for the changed metric to redirect.
+  if (type === 'configuration_drift') return [];
+
+  if (type === 'routing_session_failure' || type === 'interface_misconfiguration') {
+    const iface = stringAttribute(event, 'interface');
+    if (iface === null) return [];
+    const link = linkForInterface(event.deviceId, iface);
+    return link === null ? [] : predictUnreachable(new Set([linkKey(link)]), new Set());
+  }
+
+  if (type === 'routing_service_failure' || type === 'resource_exhaustion') {
+    return predictUnreachable(new Set(), new Set([event.deviceId]));
+  }
+
+  return [];
 }
 
 function collectLinkReports(events: ObservedEvent[]): Map<string, LinkReport> {

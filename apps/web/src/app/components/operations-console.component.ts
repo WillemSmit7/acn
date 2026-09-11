@@ -353,7 +353,8 @@ function buildEntries(
     problem: event.severity !== 'info',
   });
   for (const log of logs) entries.push({
-    id: `log-${log.id}`, at: log.receivedAt, source: 'frr',
+    id: `log-${log.id}`, at: log.receivedAt,
+    source: log.source === 'state-observer' ? 'observer' : 'frr',
     title: `${log.deviceId} · ${log.daemon ?? 'device'}`, detail: log.raw,
     tone: log.normalized ? 'warn' : 'normal', problem: log.normalized,
   });
