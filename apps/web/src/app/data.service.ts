@@ -265,6 +265,9 @@ function toAgentRun({ id, data }: { id: string; data: DocumentData }): AgentRun 
   const usage = object(data['usage']);
   const error = object(data['error']);
   const prompt = object(data['prompt']);
+  const labGroundTruth = object(data['labGroundTruth']);
+  const evaluation = object(data['evaluation']);
+  const truthType = str(labGroundTruth['rootCauseType'], 'unknown');
 
   return {
     id,
@@ -280,6 +283,15 @@ function toAgentRun({ id, data }: { id: string; data: DocumentData }): AgentRun 
     model: str(data['model']),
     reasoningEffort: str(data['reasoningEffort']),
     deterministicRootCause: toRootCause(data['deterministicRootCause']),
+    labGroundTruth: Object.keys(labGroundTruth).length === 0 ? null : {
+      rootCauseType: isAgentRootCause(truthType) ? truthType : 'unknown',
+      rootCauseDevices: strArray(labGroundTruth['rootCauseDevices']),
+    },
+    evaluation: Object.keys(evaluation).length === 0 ? null : {
+      typeMatch: evaluation['typeMatch'] === true,
+      devicesMatch: evaluation['devicesMatch'] === true,
+      overallMatch: evaluation['overallMatch'] === true,
+    },
     conclusion: toAgentConclusion(data['conclusion']),
     agreement: agreement === 'agree' || agreement === 'disagree' ? agreement : null,
     evidenceEventIds: strArray(evidenceRefs['eventIds']),

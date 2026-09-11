@@ -1,4 +1,4 @@
-import type { ScenarioDefinition, ScenarioId } from './scenarios.js';
+import type { LabGroundTruth, ScenarioDefinition, ScenarioId } from './scenarios.js';
 
 export type ActionStatus = 'running' | 'completed' | 'failed';
 
@@ -17,7 +17,7 @@ export interface LabAction {
 export interface ActionRepositoryPort {
   create(action: LabAction): Promise<void>;
   updateOutput(action: LabAction): Promise<void>;
-  finish(action: LabAction): Promise<void>;
+  finish(action: LabAction, groundTruth?: LabGroundTruth): Promise<void>;
 }
 
 export interface ScenarioRunnerPort {

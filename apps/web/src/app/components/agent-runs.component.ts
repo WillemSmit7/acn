@@ -29,7 +29,7 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                 </span>
                 @if (run.agreement) {
                   <span class="agreement" [class.no]="run.agreement === 'disagree'">
-                    {{ run.agreement === 'agree' ? 'agrees' : 'disagrees' }}
+                    {{ run.agreement === 'agree' ? 'ground-truth match' : 'ground-truth mismatch' }}
                   </span>
                 }
               </div>
@@ -49,8 +49,14 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
               @if (run.conclusion; as conclusion) {
                 <div class="comparison">
                 <div>
-                  <h4>Deterministic baseline</h4>
-                  <strong>{{ run.deterministicRootCause?.summary ?? 'unknown' }}</strong>
+                  <h4>Lab ground truth</h4>
+                  @if (run.labGroundTruth; as truth) {
+                    <strong>{{ label(truth.rootCauseType) }}</strong>
+                    <span class="confidence">{{ truth.rootCauseDevices.join(', ') || 'no device' }}</span>
+                  } @else {
+                    <strong>Unscored production-style run</strong>
+                    <span class="confidence">No controller-created truth was associated</span>
+                  }
                 </div>
                 <span class="arrow">→</span>
                 <div>
@@ -59,6 +65,13 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                   <span class="confidence">{{ conclusion.confidence }} confidence</span>
                 </div>
                 </div>
+
+                @if (run.evaluation; as evaluation) {
+                  <div class="metrics evaluation">
+                    <span>{{ evaluation.typeMatch ? '✓' : '✕' }} cause type</span>
+                    <span>{{ evaluation.devicesMatch ? '✓' : '✕' }} device set</span>
+                  </div>
+                }
 
                 <h4>Reasoning</h4>
                 <ul class="reasoning">
@@ -177,6 +190,10 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
 })
 export class AgentRunsComponent {
   readonly runs = input.required<AgentRun[]>();
+
+  label(value: string): string {
+    return value.replaceAll('_', ' ');
+  }
   private readonly data = inject(DataService);
 
   stage(run: AgentRun): string {

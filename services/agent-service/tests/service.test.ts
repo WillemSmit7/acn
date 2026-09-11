@@ -25,7 +25,7 @@ const config: AppConfig = {
   logLevel: 'error',
 };
 
-test('one diagnosis is claimed once and completed with evidence and agreement', async () => {
+test('one blind diagnosis is claimed once and scored only after model completion', async () => {
   const repository = new FakeRepository();
   const client: InvestigatorClient = { investigate: async () => modelResult() };
   const service = new AgentService(config, repository, client, quietLogger());
@@ -38,7 +38,12 @@ test('one diagnosis is claimed once and completed with evidence and agreement', 
   assert.equal(repository.claims.length, 1);
   assert.equal(repository.analyzing.length, 1);
   assert.equal(repository.completions.length, 1);
-  assert.equal(repository.completions[0]?.agreement, 'agree');
+  assert.deepEqual(repository.completions[0]?.groundTruth, {
+    rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'],
+  });
+  assert.equal(repository.completions[0]?.evaluation?.overallMatch, true);
+  assert.doesNotMatch(repository.analyzing[0]?.prompt.input ?? '', /deterministicBaseline/);
+  assert.doesNotMatch(repository.analyzing[0]?.prompt.input ?? '', /interface_misconfiguration/);
   assert.equal(repository.failures.length, 0);
 });
 
@@ -58,6 +63,19 @@ test('model failure is recorded and does not reject service shutdown', async () 
   assert.equal(repository.completions.length, 0);
 });
 
+test('a diagnosis without controller ground truth completes as unscored', async () => {
+  const repository = new FakeRepository(null);
+  const client: InvestigatorClient = { investigate: async () => modelResult() };
+  const service = new AgentService(config, repository, client, quietLogger());
+
+  service.start();
+  repository.emit(linkIncident);
+  await service.stop();
+
+  assert.equal(repository.completions[0]?.groundTruth, null);
+  assert.equal(repository.completions[0]?.evaluation, null);
+});
+
 class FakeRepository implements AgentRepositoryPort {
   readonly claims: RunClaim[] = [];
   readonly analyzing: { runId: string; prompt: PromptRecord }[] = [];
@@ -65,6 +83,10 @@ class FakeRepository implements AgentRepositoryPort {
   readonly failures: { runId: string; error: unknown }[] = [];
   private listener: ((incidents: InvestigableIncident[]) => void) | undefined;
   private readonly runIds = new Set<string>();
+
+  constructor(private readonly truth: {
+    rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
+  } | null = { rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'] }) {}
 
   watchIncidents(onIncidents: (incidents: InvestigableIncident[]) => void): () => void {
     this.listener = onIncidents;
@@ -84,6 +106,12 @@ class FakeRepository implements AgentRepositoryPort {
 
   async loadEvidence(_eventIds: string[]): Promise<EvidenceBundle> {
     return linkEvidence;
+  }
+
+  async loadGroundTruth(): Promise<{
+    rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
+  } | null> {
+    return this.truth;
   }
 
   async markAnalyzing(runId: string, _evidence: EvidenceBundle, prompt: PromptRecord): Promise<void> {

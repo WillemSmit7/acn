@@ -1,15 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ActionBusyError, LabActionService } from '../src/action-service.js';
-import { SCENARIOS } from '../src/scenarios.js';
+import { SCENARIOS, type LabGroundTruth } from '../src/scenarios.js';
 import type { ActionRepositoryPort, LabAction, ScenarioRunnerPort } from '../src/types.js';
 
 class FakeRepository implements ActionRepositoryPort {
   created: LabAction[] = [];
   finished: LabAction[] = [];
+  truths: (LabGroundTruth | undefined)[] = [];
   async create(action: LabAction): Promise<void> { this.created.push(copy(action)); }
   async updateOutput(): Promise<void> {}
-  async finish(action: LabAction): Promise<void> { this.finished.push(copy(action)); }
+  async finish(action: LabAction, truth?: LabGroundTruth): Promise<void> {
+    this.finished.push(copy(action));
+    this.truths.push(truth);
+  }
 }
 
 test('exposes exactly the five ISP failures plus restore', () => {
@@ -43,6 +47,9 @@ test('runs only a whitelisted scenario and records its streamed output', async (
   assert.deepEqual(action.output, ['configuration drift detected']);
   assert.equal(repository.created.length, 1);
   assert.equal(repository.finished[0]?.status, 'completed');
+  assert.deepEqual(repository.truths[0], {
+    rootCauseType: 'configuration_drift', rootCauseDevices: ['r2'],
+  });
 });
 
 test('rejects a second action while one is running', async () => {
@@ -73,6 +80,18 @@ test('records a failed scenario without throwing from the background task', asyn
   assert.equal(action.status, 'failed');
   assert.equal(action.error, 'Scenario exited with code 2');
   assert.equal(repository.finished[0]?.exitCode, 2);
+  assert.equal(repository.truths[0], undefined);
+});
+
+test('successful restore does not create ground truth', async () => {
+  const repository = new FakeRepository();
+  const runner: ScenarioRunnerPort = { async run() { return 0; }, stop() {} };
+  const service = new LabActionService(repository, runner, () => undefined);
+
+  await service.trigger('restore');
+  await service.stop();
+
+  assert.equal(repository.truths[0], undefined);
 });
 
 function copy(action: LabAction): LabAction {

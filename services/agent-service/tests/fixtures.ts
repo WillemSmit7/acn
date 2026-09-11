@@ -13,25 +13,10 @@ export const linkIncident: InvestigableIncident = {
   incidentId: 'INC-001',
   status: 'resolved',
   severity: 'critical',
+  startedAt: '2026-08-25T19:14:40.000Z',
   symptoms: ['r2 eth2 down', 'r3 eth1 down', 'r3 unreachable', 'pc2 unreachable'],
   affectedDevices: ['pc2', 'r2', 'r3'],
   eventIds: ['evt-r2-if', 'evt-r2-ospf', 'evt-r3-if', 'evt-r3-ospf', 'evt-r3-icmp', 'evt-pc2-icmp'],
-  rootCause: {
-    type: 'interface_misconfiguration',
-    devices: ['r2', 'r3'],
-    summary: 'R2 <-> R3 link failure',
-    confidence: 'confirmed',
-    evidence: [
-      'r2 reported eth2 down',
-      'r2 lost OSPF adjacency with r3',
-      'r3 lost OSPF adjacency with r2',
-      'r3 reported eth1 down',
-      'both ends reported independently, so both devices are alive - the link between them is not',
-    ],
-    predictedUnreachable: ['pc2', 'r3'],
-    observedUnreachable: ['pc2', 'r3'],
-    predictionMatches: true,
-  },
 };
 
 export const linkEvidence: EvidenceBundle = {

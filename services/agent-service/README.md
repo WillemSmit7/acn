@@ -1,9 +1,12 @@
 # GPT read-only investigation agent
 
-Increment 4 investigates deterministic `incidents/` with GPT-5.6 Luna. It
+Increment 5 investigates `incidents/` with GPT-5.6 Luna. It
 reads the incident, every referenced `networkEvents/` document and the original
 `networkLogs/` lines behind log-derived events, then records a reproducible run
-in `agentRuns/`.
+in `agentRuns/`. A prompt-only projection removes the deterministic diagnosis,
+incident symptoms and cause-revealing event names. GPT sees neutral facts and
+raw device evidence, then lab-only ground truth is loaded and scored after the
+model has committed its conclusion.
 
 The service is deliberately read-only with respect to the network. It has no
 Docker, SSH, `vtysh`, controller or remediation capability.
@@ -26,9 +29,9 @@ cp services/agent-service/.env.example services/agent-service/.env
 npm run agent-service
 ```
 
-The Firestore emulator must already be running. The service investigates each
-settled diagnosis once; changing or adding telemetry does not create another
-paid run unless the deterministic root-cause diagnosis itself changes.
+The Firestore emulator must already be running. The service performs one paid
+investigation per incident and prompt contract. Run identity does not depend on
+the deterministic root-cause mapper.
 
 If the key is missing, invalid, rate-limited or the API times out, the service
 records a failed `agentRuns/` document and continues watching. It never allows

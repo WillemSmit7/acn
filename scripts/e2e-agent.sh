@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ACN Increment 4 end-to-end test: real lab evidence -> incidents -> GPT-5.6 Luna.
+# ACN Increment 5 end-to-end test: real lab evidence -> blind GPT diagnosis.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

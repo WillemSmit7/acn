@@ -1,10 +1,15 @@
-import type { EvidenceBundle, InvestigableIncident, PromptRecord } from '../models/types.js';
+import type {
+  EvidenceBundle,
+  EvidenceEvent,
+  InvestigableIncident,
+  PromptRecord,
+} from '../models/types.js';
 
-export const PROMPT_VERSION = 'gpt-investigator-v2-isp-failures';
+export const PROMPT_VERSION = 'gpt-investigator-v3-neutral-evidence';
 
 const DEVELOPER_PROMPT = `You are the ACN read-only network incident investigator.
 
-Independently diagnose the supplied incident using only the supplied normalized events and raw device log lines. Compare your conclusion with the deterministic baseline, but do not assume it is correct. A disagreement is useful signal.
+Independently determine the most likely root cause using only the supplied neutral observations and raw device log lines. No reference diagnosis or scenario label is available to you.
 
 Rules:
 - You are strictly read-only. Do not propose, execute, or request remediation or configuration changes.
@@ -27,19 +32,65 @@ export function buildPrompt(
     input: JSON.stringify(
       {
         task: 'Investigate this incident and return the required structured conclusion.',
-        deterministicBaseline: incident.rootCause,
         incident: {
           incidentId: incident.incidentId,
           status: incident.status,
           severity: incident.severity,
-          symptoms: incident.symptoms,
           affectedDevices: incident.affectedDevices,
         },
-        normalizedEvents: evidence.events,
+        neutralObservations: evidence.events.map(toNeutralObservation),
         rawDeviceLogs: evidence.logs,
       },
       null,
       2,
     ),
   };
+}
+
+const ATTRIBUTE_ALLOW_LIST = new Set([
+  'component', 'interface', 'setting', 'expected', 'observed', 'protocol', 'peer',
+  'interfaceState', 'configuredPassive', 'adminState', 'expectedState', 'service',
+  'processState', 'containerState', 'resource', 'quota', 'impactedService',
+  'serviceState', 'target', 'reachable', 'address', 'neighborId', 'state',
+]);
+
+export function toNeutralObservation(event: EvidenceEvent): Record<string, unknown> {
+  const facts = Object.fromEntries(
+    Object.entries(event.attributes).filter(([key]) => ATTRIBUTE_ALLOW_LIST.has(key)),
+  );
+  return {
+    id: event.id,
+    deviceId: event.deviceId,
+    observationKind: observationKind(event.eventType),
+    observedState: observationState(event.eventType),
+    severity: event.severity,
+    source: event.source,
+    sourceLogId: event.sourceLogId,
+    facts,
+    observedAt: event.occurredAt,
+  };
+}
+
+function observationState(eventType: string): string {
+  if (eventType === 'device_unreachable') return 'unreachable';
+  if (eventType === 'device_recovered') return 'reachable';
+  if (eventType === 'configuration_drift') return 'different_from_intent';
+  if (eventType === 'configuration_restored') return 'matches_intent';
+  if (eventType.endsWith('_down')) return 'down';
+  if (eventType.endsWith('_up')) return 'up';
+  if (eventType === 'resource_exhaustion') return 'constrained';
+  if (eventType === 'resource_recovered') return 'normal';
+  return 'observed';
+}
+
+function observationKind(eventType: string): string {
+  if (eventType.includes('interface')) return 'interface_state';
+  if (eventType.includes('ospf_neighbor') || eventType.includes('routing_session')) {
+    return 'protocol_adjacency_state';
+  }
+  if (eventType.includes('configuration')) return 'configuration_value_state';
+  if (eventType.includes('routing_service')) return 'process_state';
+  if (eventType.includes('resource')) return 'resource_state';
+  if (eventType.includes('reachable')) return 'reachability_state';
+  return 'device_observation';
 }

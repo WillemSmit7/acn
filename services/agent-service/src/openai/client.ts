@@ -48,7 +48,7 @@ const OUTPUT_SCHEMA = {
 
 type FetchLike = typeof fetch;
 
-/** Minimal Responses API client. The service needs no tools and has no actions. */
+/** Minimal Responses API client. GPT diagnoses supplied evidence but has no action tools. */
 export class OpenAIInvestigatorClient implements InvestigatorClient {
   constructor(
     private readonly config: AppConfig,

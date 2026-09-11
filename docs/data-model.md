@@ -227,30 +227,24 @@ See `docs/incident-model.md` for the correlation and lifecycle rules.
 
 ## `agentRuns/` — implemented
 
-One document per incident diagnosis version, written by the Agent Service. The
-document id is deterministic (`RUN-<incident>-<diagnosis hash>`), so repeated
-Firestore snapshots and service restarts cannot generate duplicate paid runs.
-A recovery event does not change the diagnosis version; only a changed
-deterministic root cause does.
+One document per incident and prompt-contract version, written by the Agent
+Service. The deterministic document id prevents duplicate paid runs across
+Firestore snapshots and service restarts. Run identity does not depend on the
+deterministic root-cause mapper.
 
 ```json
 {
   "runId": "RUN-INC-001-8D21A2C04F10",
   "incidentId": "INC-001",
-  "diagnosisVersion": "<sha256 of the deterministic rootCause>",
+  "diagnosisVersion": "<sha256 of incident id and prompt version>",
   "incidentStatus": "open",
-  "deterministicRootCause": {
-    "type": "link_failure",
-    "devices": ["r2", "r3"],
-    "summary": "R2 <-> R3 link failure",
-    "confidence": "confirmed"
-  },
+  "labEvaluationId": "<opaque id, or null for production-style runs>",
   "status": "completed",
   "stage": "completed",
   "provider": "openai",
   "model": "gpt-5.6-luna",
   "reasoningEffort": "low",
-  "promptVersion": "gpt-investigator-v1",
+  "promptVersion": "gpt-investigator-v3-neutral-evidence",
   "prompt": {
     "version": "gpt-investigator-v1",
     "developer": "<read-only investigator policy>",
@@ -269,7 +263,15 @@ deterministic root cause does.
     "citedEventIds": ["<supporting event id>"],
     "citedLogIds": ["<supporting raw log id>"]
   },
-  "agreement": "agree",
+  "labGroundTruth": {
+    "rootCauseType": "interface_misconfiguration",
+    "rootCauseDevices": ["r2"]
+  },
+  "evaluation": {
+    "typeMatch": true,
+    "devicesMatch": true,
+    "overallMatch": true
+  },
   "citedEvidence": {
     "eventIds": ["<validated event ids>"],
     "logIds": ["<validated log ids>"]
@@ -302,8 +304,11 @@ Firestore failure is isolated to this service and cannot stop monitoring.
 `evidenceRefs` means evidence included in the prompt. `citedEvidence` is the
 smaller subset the model used to support its conclusion. Every cited id is
 validated against the supplied evidence before a run can complete. The
-`agreement` field is computed by the service from root-cause type and device
-set; the model cannot mark its own answer as agreeing.
+Lab ground truth stays in a separate server-only document while GPT is working
+and is never included in the prompt. After a cited conclusion is returned, the
+service publishes `typeMatch`, `devicesMatch` and `overallMatch`. The model
+cannot score its own answer. Runs without controller-created truth are
+explicitly unscored.
 
 The exact prompt, model, reasoning effort, response id, token breakdown,
 latency, pricing snapshot and cost estimate are retained so a run can be

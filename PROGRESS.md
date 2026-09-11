@@ -564,8 +564,24 @@ has no connection to it.
 
 ---
 
-## Next: Increment 5
+## Increment 5 — evidence-first GPT root-cause evaluation
 
-Increment 5 introduces controlled network actions. Do not add them to the Agent
-Service early: the current GPT investigator must remain read-only until an
-explicit action contract and the Increment 6 risk/approval policy exist.
+Implemented on `5-increment-5-gpt-evidence-first-root-cause`:
+
+- GPT receives neutral observations and raw device logs, with no deterministic
+  root cause, incident symptom or cause-revealing event type in its prompt.
+- Agent run identity is independent of the deterministic mapper.
+- Successful controller-triggered faults record lab-only ground truth in a
+  separate collection; failed actions and restores create no truth.
+- Ground truth is associated atomically but withheld from `agentRuns` until GPT
+  has returned a cited conclusion.
+- Completed runs score cause type and device set independently. Direct scripts
+  and production-style incidents remain valid, explicitly unscored runs.
+- The dashboard reveals lab truth beside GPT's answer only after completion.
+- **111/111 unit tests pass**, the five-category credit-free blind-evidence E2E
+  passes, and the isolated Firestore evaluation-boundary E2E proves one-time
+  truth claiming, stale-incident rejection and post-completion reveal.
+
+The detailed trust boundaries and exit criteria are in
+`docs/increment-5-plan.md`. Controlled remediation moves to Increment 6 and
+must retain a separate allow-listed action and approval boundary.

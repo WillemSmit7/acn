@@ -35,7 +35,7 @@ export class AgentService {
 
   private enqueue(incident: InvestigableIncident): void {
     if (this.stopped) return;
-    const version = diagnosisVersion(incident.rootCause);
+    const version = diagnosisVersion(incident.incidentId, PROMPT_VERSION);
     const runId = runIdFor(incident, version);
     if (this.active.has(runId)) return;
     this.active.add(runId);
@@ -81,11 +81,13 @@ export class AgentService {
         evidence.events.map((event) => event.id),
         evidence.logs.map((log) => log.id),
       );
-      const agreement = agrees(incident, result.conclusion) ? 'agree' : 'disagree';
-      await this.repository.completeRun(runId, { ...result, agreement });
+      const groundTruth = await this.repository.loadGroundTruth(runId);
+      const evaluation = groundTruth === null ? null : evaluate(groundTruth, result.conclusion);
+      await this.repository.completeRun(runId, { ...result, groundTruth, evaluation });
 
       this.logger.line(
-        `${runId} COMPLETED   ${result.conclusion.summary} (${agreement}, ` +
+        `${runId} COMPLETED   ${result.conclusion.summary} (` +
+        `${evaluation === null ? 'unscored' : evaluation.overallMatch ? 'match' : 'mismatch'}, ` +
         `$${result.estimatedCostUsd.toFixed(6)}, ${result.latencyMs}ms)`,
       );
     } catch (error) {
@@ -109,9 +111,13 @@ export class AgentService {
   }
 }
 
-export function agrees(incident: InvestigableIncident, conclusion: AgentConclusion): boolean {
-  return incident.rootCause.type === conclusion.rootCauseType &&
-    sameStrings(incident.rootCause.devices, conclusion.rootCauseDevices);
+export function evaluate(
+  groundTruth: { rootCauseType: string; rootCauseDevices: string[] },
+  conclusion: AgentConclusion,
+): { typeMatch: boolean; devicesMatch: boolean; overallMatch: boolean } {
+  const typeMatch = groundTruth.rootCauseType === conclusion.rootCauseType;
+  const devicesMatch = sameStrings(groundTruth.rootCauseDevices, conclusion.rootCauseDevices);
+  return { typeMatch, devicesMatch, overallMatch: typeMatch && devicesMatch };
 }
 
 export function validateCitations(

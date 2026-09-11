@@ -97,6 +97,15 @@ export interface AgentRun {
   model: string;
   reasoningEffort: string;
   deterministicRootCause: RootCause | null;
+  labGroundTruth: {
+    rootCauseType: AgentConclusion['rootCauseType'];
+    rootCauseDevices: string[];
+  } | null;
+  evaluation: {
+    typeMatch: boolean;
+    devicesMatch: boolean;
+    overallMatch: boolean;
+  } | null;
   conclusion: AgentConclusion | null;
   agreement: 'agree' | 'disagree' | null;
   evidenceEventIds: string[];

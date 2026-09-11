@@ -216,10 +216,12 @@ dashboard renders; writes stay denied everywhere, as do reads of the
 collections later increments add. That is safe only against a local emulator
 holding synthetic data — see the warning in the rules file.
 
-The Increment 4 view shows `collecting evidence` and `analyzing` stages live,
-then places the deterministic baseline next to the GPT conclusion. It exposes
-agreement or disagreement, tokens, latency, estimated cost, the reproduction
-prompt and expandable citations back to raw device output.
+The Increment 5 view shows `collecting evidence` and `analyzing` stages live.
+GPT receives neutral observations and raw logs without the deterministic
+diagnosis, scenario label or incident symptoms. For controller-triggered lab
+runs, the completed view then reveals hidden lab ground truth beside GPT's
+committed conclusion and scores cause type and device set separately. Direct
+script and production-style runs remain explicitly unscored.
 
 The operator timeline merges recent health probes, raw FRR lines, normalized
 events, incident state, lab action output and agent state by timestamp. This is

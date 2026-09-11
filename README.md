@@ -4,7 +4,7 @@ A testable network-operations environment where network data is collected,
 normalized, stored and — in later increments — reasoned about and acted on by
 an AI agent.
 
-**Current status: Increments 1–4 complete, with a live operator visualizer.**
+**Current status: Increments 1–4 complete; Increment 5 adds blind, evidence-first GPT evaluation.**
 See [PROGRESS.md](PROGRESS.md).
 
 The current end-to-end path is:
@@ -14,8 +14,10 @@ network -> health/log collection -> normalized events -> incidents
         -> GPT-5.6 Luna investigation -> live NOC dashboard
 ```
 
-The AI layer is strictly read-only. It investigates incidents and records its
-reasoning, evidence citations, agreement, usage, latency and cost in
+The AI layer is strictly read-only. GPT independently diagnoses neutral
+observations and raw logs, then a lab-only evaluator compares the committed
+answer with hidden injected ground truth. Runs record reasoning, citations,
+evaluation scores, usage, latency and cost in
 `agentRuns/`; it has no network action capability.
 
 ---
@@ -254,8 +256,15 @@ This runs the live stack through all five ISP-style fault scenarios:
 
 For fast, deterministic verification with no model charge, run
 `npm run test:e2e:failure-categories`. It exercises autonomous state snapshots
-through transition detection, deterministic diagnosis and the agent
-prompt/agreement boundary.
+through transition detection, neutral prompt projection and post-response
+ground-truth scoring.
+
+With the Firestore emulator running, the lab-only truth boundary itself is
+verified without a model call:
+
+```bash
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run test:e2e:evaluation-boundary
+```
 
 For Increment 4, this creates both real incidents and has GPT-5.6 Luna
 investigate them. It is verified against the real lab and live API:
@@ -264,9 +273,11 @@ investigate them. It is verified against the real lab and live API:
 OPENAI_API_KEY=... ./scripts/e2e-agent.sh
 ```
 
-It verifies that each run cites real events and raw logs, explicitly records
-agreement or disagreement with the deterministic diagnosis, distinguishes the
-two fault scenarios, and records model, prompt, tokens, latency and cost.
+It verifies that each run cites real events and raw logs, receives no
+deterministic diagnosis or cause-revealing event label, distinguishes the fault
+scenarios, and records model, prompt, tokens, latency and cost. Runs started by
+direct scenario scripts are intentionally unscored; controller-triggered lab
+runs receive hidden ground truth after GPT responds.
 
 For an interactive demonstration, keep all services running, open the NOC
 dashboard and use **Manual fault controls**. The **Live operations timeline**

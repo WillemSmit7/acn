@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Credit-free focused E2E: autonomous state snapshot -> transition event ->
- * deterministic incident diagnosis -> agent prompt and conclusion agreement.
+ * neutral GPT evidence -> blind conclusion -> hidden ground-truth evaluation.
  */
 import assert from 'node:assert/strict';
 import { AutonomousStateObserver } from '../services/layer-zero/dist/observer/stateObserver.js';
 import { inferRootCause } from '../services/incident-service/dist/correlation/rootCause.js';
 import { buildPrompt } from '../services/agent-service/dist/investigation/prompt.js';
-import { agrees } from '../services/agent-service/dist/service.js';
+import { evaluate } from '../services/agent-service/dist/service.js';
 
 const cases = [
   {
@@ -37,7 +37,7 @@ const cases = [
   },
 ];
 
-for (const scenario of cases) {
+for (const [index, scenario] of cases.entries()) {
   const observations = [];
   const snapshot = {
     deviceId: scenario.deviceId,
@@ -59,9 +59,9 @@ for (const scenario of cases) {
   assert.ok(observation, `${scenario.eventType}: autonomous observer emits transition`);
   const observed = {
     ...observation,
-    id: `evt-${scenario.eventType}`,
+    id: `evt-observation-${index + 1}`,
     source: 'layer-zero',
-    sourceLogId: `log-${scenario.eventType}`,
+    sourceLogId: `log-observation-${index + 1}`,
     occurredAt: observation.observedAt,
   };
   const rootCause = inferRootCause([observed], scenario.observedUnreachable);
@@ -69,9 +69,10 @@ for (const scenario of cases) {
   assert.equal(rootCause.predictionMatches, true, `${scenario.eventType}: impact prediction matches`);
 
   const incident = {
-    incidentId: `INC-${scenario.eventType}`,
+    incidentId: `INC-BLIND-${String(index + 1).padStart(3, '0')}`,
     status: 'open',
     severity: observation.severity === 'critical' ? 'critical' : 'warning',
+    startedAt: '2026-08-26T19:59:59.000Z',
     symptoms: [rootCause.summary],
     affectedDevices: [scenario.deviceId],
     eventIds: [observed.id],
@@ -90,7 +91,12 @@ for (const scenario of cases) {
   const prompt = buildPrompt(incident, evidence);
   assert.match(prompt.input, new RegExp(observed.id));
   assert.match(prompt.input, new RegExp(observed.sourceLogId));
-  assert.equal(agrees(incident, {
+  assert.doesNotMatch(prompt.input, new RegExp(scenario.eventType));
+  assert.doesNotMatch(prompt.input, new RegExp(scenario.rootCauseType));
+  const score = evaluate({
+    rootCauseType: scenario.rootCauseType,
+    rootCauseDevices: rootCause.devices,
+  }, {
     rootCauseType: scenario.rootCauseType,
     rootCauseDevices: rootCause.devices,
     summary: rootCause.summary,
@@ -98,7 +104,8 @@ for (const scenario of cases) {
     reasoning: ['Autonomous observer fixture conclusion'],
     citedEventIds: [observed.id],
     citedLogIds: [observed.sourceLogId],
-  }), true, `${scenario.eventType}: agent conclusion agrees`);
+  });
+  assert.equal(score.overallMatch, true, `${scenario.eventType}: blind conclusion matches truth`);
 
   console.log(`PASS ${scenario.eventType} -> ${scenario.rootCauseType}`);
 }
