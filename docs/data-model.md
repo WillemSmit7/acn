@@ -62,8 +62,9 @@ volume demands it.
 
 ## `networkLogs/` — implemented
 
-Every log line collected from a device, stored verbatim. Auto-generated
-document id. Written by Layer 0.
+Every FRR line or autonomous state-probe result, stored exactly as observed.
+Auto-generated document id. Written by Layer 0. `source` is `frr` or
+`state-observer`.
 
 ```json
 {
@@ -135,6 +136,11 @@ here so Increment 3 can correlate across them, and `source` tells them apart.
 | `interface_up`        | `info`     | `layer-zero`     | zebra reports an interface up   |
 | `ospf_neighbor_down`  | `warning`  | `layer-zero`     | OSPF adjacency leaves Full      |
 | `ospf_neighbor_up`    | `info`     | `layer-zero`     | OSPF adjacency reaches Full     |
+| `configuration_drift` / `configuration_restored` | `warning` / `info` | `layer-zero` | intended OSPF cost differs / matches |
+| `routing_session_down` / `routing_session_up` | `warning` / `info` | `layer-zero` | passive OSPF session configured / cleared |
+| `interface_admin_down` / `interface_admin_up` | `warning` / `info` | `layer-zero` | required interface disabled / enabled |
+| `routing_service_down` / `routing_service_up` | `critical` / `info` | `layer-zero` | ospfd missing / running |
+| `resource_exhaustion` / `resource_recovered` | `critical` / `info` | `layer-zero` | bounded CPU pressure active / cleared |
 
 `sourceLogId` links a normalized event back to the exact `networkLogs`
 document it was derived from, so the original text behind any event is one

@@ -16,10 +16,4 @@ ${DOCKER} exec clab-acn-r3 sh -c '
   kill -9 $(pidof ospfd)
 '
 
-if ${DOCKER} exec clab-acn-r3 pidof ospfd >/dev/null 2>&1; then
-  echo "ERROR: ospfd is still running" >&2
-  exit 1
-fi
-emit_monitor_event r3 routing_service_down \
-  service=ospfd processState=stopped containerState=running
-echo "==> Probe confirmed ospfd stopped while r3 remained running"
+echo "==> Fault injected; the autonomous observer will detect the missing process"

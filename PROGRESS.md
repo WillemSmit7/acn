@@ -1,6 +1,6 @@
 # ACN Progress
 
-Last updated: 2026-08-26
+Last updated: 2026-09-09
 
 ## ISP failure simulation update
 
@@ -9,9 +9,17 @@ failures: configuration drift, logical OSPF-session failure, administratively
 disabled interface, ospfd crash, and bounded CPU exhaustion affecting ospfd.
 The former whole-router-stop scenario was removed; the existing interface
 shutdown was retained and reclassified because it genuinely maps to the
-logical-port category. Each scenario records a read-back observation in the raw
-log pipeline, and `npm run test:e2e:failure-categories` verifies the complete
-credit-free path through normalization, deterministic diagnosis and agent input.
+logical-port category. The scenarios now inject faults only. Layer Zero's
+autonomous read-only state observer independently polls the intended R2/R3
+configuration, process state, and CPU quota, preserves the probe output, and
+emits deduplicated fault/recovery transitions. `npm run
+test:e2e:failure-categories` verifies that observer-to-agent path without model
+credits.
+
+Persistent state incidents now stay open until the observer confirms recovery;
+healthy ICMP alone no longer resolves configuration drift or service-state
+faults. Explicit root-cause impact is predicted from topology and then compared
+with reachability observed independently.
 
 | Increment | Scope                                         | Status                                                 |
 | --------- | --------------------------------------------- | ------------------------------------------------------ |
@@ -373,7 +381,9 @@ predicted unreachable: pc2, r3 | observed: pc2, r3 | MATCH
    the same second arrives in arbitrary order; seen "up" first, the trailing
    "down" re-opens a fault nothing ever clears and the incident hangs open
    forever. Recovery events also go missing when the collector reattaches its
-   tail during a redeploy. Resolution follows observed reachability instead.
+   tail during a redeploy. Native connectivity-fault resolution follows
+   observed reachability instead; persistent state faults require an explicit
+   observer recovery.
 
 4. **A recovered device will exonerate itself if you let it.** Re-inferring the
    root cause after r3 came back - and started logging again - turned a
@@ -441,8 +451,8 @@ scenarios and asserts the full evidence and accounting contract when an
 - Tests cover request shape, strict structured response parsing, cost math,
   evidence citations, agreement and disagreement, duplicate suppression, and
   recording a model failure without throwing.
-- **96/96 tests pass**: 93 across Health, Layer 0, Incident and Agent services,
-  plus 3 Lab Controller safety/lifecycle tests.
+- **109/109 tests pass**: 18 Health, 33 Layer 0, 43 Incident, 11 Agent, and
+  4 Lab Controller tests.
 - The complete production build passes: all five strict TypeScript services
   and the Angular dashboard.
 - The emulator-backed missing-key path was verified with an isolated real
@@ -468,7 +478,7 @@ scenarios and asserts the full evidence and accounting contract when an
 | 6   | API failure records a failed run without disturbing monitoring | **Verified against the Firestore emulator**         |
 | 7   | Dashboard shows agent lifecycle and result live                | **Verified; interactive visualizer implemented**    |
 | 8   | No credentials committed                                       | Verified                                            |
-| 9   | Increments 1–3 remain green                                    | **Verified — full 96-test regression suite passes** |
+| 9   | Increments 1–3 remain green                                    | **Verified — full 109-test regression suite passes** |
 
 ### Operator visualizer update
 
@@ -478,7 +488,7 @@ switching between terminals:
 - a timestamped live timeline merges health probes, raw FRR output, normalized
   events, incident state, manual controller output and Luna's investigation
 - filters isolate problems, AI activity or raw device logs
-- buttons trigger the two predefined fault scenarios and network restore
+- buttons trigger five predefined fault scenarios and network restore
 - `services/lab-controller` binds to `127.0.0.1:8787`, accepts no arbitrary
   command/target parameters, refuses concurrent actions and audits output to
   `labActions/`
@@ -503,8 +513,8 @@ Angular, live against the Firestore emulator on
 
 **This is Increment 7's UI pulled forward deliberately** — a correlation engine
 you cannot watch working is hard to trust. It now includes a unified timeline
-for health checks, raw logs, events, incidents, controller actions and Luna, plus
-three manual synthetic-lab controls through a separate localhost-only service.
+  for health checks, raw logs, events, incidents, controller actions and Luna, plus
+  six named synthetic-lab controls through a separate localhost-only service.
 Authentication, per-user authorisation, incident acknowledgement and
 operator-triggered agent interaction remain Increment 7.
 
@@ -534,12 +544,12 @@ has no connection to it.
   and `eth1`/`eth2` are simply absent. Recovery is
   `containerlab deploy --topo lab/topology.clab.yml --reconfigure` followed by
   re-adding the two host routes (needs sudo).
-- **`03-restore-network.sh` depends on the host routes.** Its convergence check
+- **`06-restore-network.sh` depends on the host routes.** Its convergence check
   pings `10.255.0.3` from the host, so without the routes it fails even when the
   lab itself is perfectly healthy.
-- **Scenarios 01 and 02 are now distinguishable.** A link failure logs
-  `interface_down` on both ends; a router failure takes the whole device away
-  and logs nothing from it. Increment 3 gets to exploit that.
+- **The autonomous observer is deliberately lab-specific.** It uses fixed,
+  read-only Docker/FRR commands for the five supported scenarios. General
+  SNMP/gNMI discovery and vendor-neutral intent models remain Increment 9.
 - **`networkLogs/` grows without bound**, like `healthChecks/`. Retention is an
   Increment 10 concern.
 - **Layer 0 resumes at the end of the file.** A tail restart or a service

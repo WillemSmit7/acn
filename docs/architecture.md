@@ -40,10 +40,10 @@ AUDIT + VERIFICATION
 |               v                                                  |
 |  +--------------------------+  +----------------------------+    |
 |  |      Health Service      |  |          Layer 0           |    |
-|  |  ICMP every 30s          |  |  docker exec tail -F       |    |
-|  |  state transitions       |  |  parse -> normalize        |    |
+|  |  ICMP every 30s          |  |  FRR tails + state probes  |    |
+|  |  state transitions       |  |  transitions -> normalize |    |
 |  +------------+-------------+  +-------------+--------------+    |
-|               |  ICMP transitions           |  log-derived       |
+|               |  ICMP transitions           | evidence-derived   |
 |               v                             v                    |
 |  +--------------------------------------------------------+      |
 |  |         Firebase Emulator Suite - Firestore            |      |
@@ -86,7 +86,7 @@ controller or remediation interface, so the Increment 4 read-only boundary is
 structural rather than merely a prompt instruction.
 
 The Lab Controller is deliberately outside that path. It binds to
-`127.0.0.1`, exposes only three named routes, maps them to repository-owned lab
+`127.0.0.1`, exposes only six named routes, maps them to repository-owned lab
 scenario scripts and records lifecycle/output in `labActions/`. It accepts no
 command, path, device or interface parameters and refuses overlapping actions.
 This gives a human an interactive demo harness without giving GPT an action
@@ -192,8 +192,10 @@ fault to a recovery.** FRR log timestamps have one-second resolution, so an
 interface down/up pair inside the same second arrives in arbitrary order; seen
 "up" first, the trailing "down" re-opens a fault nothing ever clears. Recovery
 events also go missing when the collector reattaches its tail during a redeploy.
-Resolution follows observed reachability instead, because the Health Service
-re-checks that every round and it is therefore self-correcting.
+Connectivity-fault resolution follows observed reachability because the Health
+Service re-checks it every round. Persistent configuration, session, admin,
+service, and resource faults instead require the autonomous state observer's
+matching recovery transition; ICMP health cannot close them.
 
 ## The UI, and why the emulator is not a limitation
 

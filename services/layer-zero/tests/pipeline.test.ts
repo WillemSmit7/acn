@@ -20,6 +20,7 @@ const config: AppConfig = {
   dockerBinary: 'docker',
   flushIntervalMs: 500,
   restartDelayMs: 3000,
+  observerIntervalMs: 5000,
   logLevel: 'error',
 };
 
@@ -138,4 +139,26 @@ test('counters distinguish lines collected from events emitted', async () => {
   await pipeline.flush();
 
   assert.deepEqual(pipeline.stats(), { linesSeen: 2, eventsEmitted: 1 });
+});
+
+test('an autonomous state observation preserves its probe output as evidence', async () => {
+  const repository = new FakeRepository();
+  const pipeline = build(repository);
+  const observedAt = new Date('2026-08-26T20:00:00.000Z');
+
+  pipeline.handleObservation({
+    deviceId: 'r2',
+    eventType: 'configuration_drift',
+    severity: 'warning',
+    attributes: { interface: 'eth2', expected: '10', observed: '65535' },
+    raw: 'interface eth2\n ip ospf cost 65535',
+    observedAt,
+  });
+  await pipeline.flush();
+
+  assert.equal(repository.saved[0]?.raw.source, 'state-observer');
+  assert.equal(repository.saved[0]?.raw.raw, 'interface eth2\n ip ospf cost 65535');
+  assert.equal(repository.saved[0]?.parsed?.daemon, 'ACNOBS');
+  assert.equal(repository.saved[0]?.event?.eventType, 'configuration_drift');
+  assert.equal(repository.saved[0]?.event?.occurredAt, observedAt);
 });

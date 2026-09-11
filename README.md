@@ -119,8 +119,10 @@ npm run health-service
 npm run layer-zero
 ```
 
-Layer 0 tails each router's FRR logs, stores every line in `networkLogs/`, and
-writes normalized `networkEvents/` for interface and OSPF adjacency changes.
+Layer 0 tails each router's FRR logs and independently polls intended router
+state. It stores exact log/probe evidence in `networkLogs/` and writes normalized
+`networkEvents/` for interface, OSPF, configuration, service, and resource-state
+changes. Fault scenarios do not write monitoring events.
 
 **Terminal 5 — the Incident Service** (Increment 3)
 
@@ -146,9 +148,8 @@ remediates or changes the network.
 npm run lab-controller   # localhost-only API on 127.0.0.1:8787
 ```
 
-This powers three whitelisted dashboard buttons: break R2–R3, stop R3 and
-restore. It is a manual synthetic-lab harness, completely separate from Luna;
-the AI remains read-only.
+This powers five whitelisted fault buttons plus restore. It is a manual
+synthetic-lab harness, completely separate from Luna; the AI remains read-only.
 
 **The NOC dashboard** (live view and manual demo controls)
 
@@ -252,8 +253,9 @@ This runs the live stack through all five ISP-style fault scenarios:
 ```
 
 For fast, deterministic verification with no model charge, run
-`npm run test:e2e:failure-categories`. It exercises raw probe logs through
-normalization, deterministic diagnosis and the agent prompt/agreement boundary.
+`npm run test:e2e:failure-categories`. It exercises autonomous state snapshots
+through transition detection, deterministic diagnosis and the agent
+prompt/agreement boundary.
 
 For Increment 4, this creates both real incidents and has GPT-5.6 Luna
 investigate them. It is verified against the real lab and live API:

@@ -22,7 +22,4 @@ ${DOCKER} exec clab-acn-r3 sh -c '
   kill -STOP $(pidof ospfd)
 '
 
-${DOCKER} exec clab-acn-r3 test -s /tmp/acn-resource-pids
-emit_monitor_event r3 resource_exhaustion \
-  resource=cpu quota=10pct impactedService=ospfd serviceState=starved
-echo "==> Probe confirmed CPU pressure is affecting ospfd; restore removes the quota and workers"
+echo "==> Fault injected; the autonomous observer will detect the quota and stopped service"

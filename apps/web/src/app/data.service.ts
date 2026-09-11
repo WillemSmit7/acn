@@ -217,6 +217,7 @@ function toLog({ id, data }: { id: string; data: DocumentData }): NetworkLog {
     daemon: typeof data['daemon'] === 'string' ? data['daemon'] : null,
     parsed: data['parsed'] === true,
     normalized: data['normalized'] === true,
+    source: data['source'] === 'state-observer' ? 'state-observer' : 'frr',
     receivedAt: toDate(data['receivedAt']),
   };
 }

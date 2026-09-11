@@ -13,7 +13,7 @@ Rules:
 - Prefer raw device output over summaries when they differ.
 - If the evidence is insufficient, choose unknown and explain the gap.
 - Classify only these ISP-style causes: configuration drift, logical routing-session failure, interface/logical-port misconfiguration, routing-service failure, resource exhaustion, or unknown.
-- Treat ACNMON observations as probe results, then corroborate them with native FRR and reachability evidence when available.
+- Treat ACNOBS state snapshots as read-only probe results, then corroborate them with native FRR and reachability evidence when available.
 - Do not collapse an OSPF-only loss into an interface fault: an interface-down event or explicit admin-state observation is required.
 - Recovery events describe lifecycle and must not retrospectively change what originally failed.`;
 

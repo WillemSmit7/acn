@@ -31,10 +31,5 @@ ${DOCKER} exec clab-acn-r3 sh -c '
 '
 ${DOCKER} update --cpus 0 clab-acn-r3 >/dev/null
 
-emit_monitor_event r2 configuration_restored component=ospf interface=eth2
-emit_monitor_event r2 routing_session_up protocol=ospf interface=eth2 peer=10.255.0.3
-emit_monitor_event r2 interface_admin_up interface=eth2 peer=r3 adminState=up
-emit_monitor_event r3 routing_service_up service=ospfd processState=running
-emit_monitor_event r3 resource_recovered resource=cpu impactedService=ospfd
-
-echo "==> Baseline restored; allow OSPF one dead interval to reconverge"
+echo "==> Baseline restored; the autonomous observer will emit recovery transitions"
+echo "==> Allow OSPF one dead interval to reconverge"

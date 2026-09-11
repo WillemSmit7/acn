@@ -18,7 +18,7 @@ npm run health-service   # ICMP -> devices, healthChecks, networkEvents
 npm run layer-zero       # FRR logs -> networkLogs, networkEvents
 npm run incident-service # networkEvents -> incidents
 npm run agent-service    # incidents + evidence -> agentRuns
-npm run lab-controller   # three whitelisted manual lab actions on :8787
+npm run lab-controller   # five whitelisted faults plus restore on :8787
 npm run web              # this app on http://localhost:4200
 ```
 

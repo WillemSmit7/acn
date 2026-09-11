@@ -37,6 +37,7 @@ export interface NetworkLog {
   daemon: string | null;
   parsed: boolean;
   normalized: boolean;
+  source: 'frr' | 'state-observer';
   receivedAt: Date | null;
 }
 

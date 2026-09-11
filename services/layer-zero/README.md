@@ -2,12 +2,17 @@
 
 **Increment 2 — implemented.**
 
-Layer 0 tails FRR's log files on every lab router, stores each line verbatim in
-`networkLogs/`, and writes a `networkEvents/` document for the lines that carry
-a recognisable network event. Every derived event records the `sourceLogId` of
-the line it came from, so the original text behind any conclusion is one lookup
-away — which is what makes the event stream usable as evidence by Increment 4's
-agent rather than merely as a summary.
+Layer 0 combines FRR log collection with an autonomous, read-only state
+observer. It stores exact log lines and command output in `networkLogs/`, and
+writes a `networkEvents/` document for meaningful transitions. Every event
+records the `sourceLogId` of its evidence, so the original observation behind a
+conclusion is one lookup away.
+
+The observer polls fixed, repository-owned commands for the five supported lab
+conditions. Scenario scripts only inject faults; they do not announce what they
+changed or write monitoring events. Healthy startup seeds a quiet baseline, a
+fault already present at startup is emitted immediately, unchanged states are
+deduplicated, and restoration emits the matching recovery event.
 
 ```bash
 npm run layer-zero          # from the repo root, with the lab and emulator up
@@ -22,6 +27,11 @@ npm run layer-zero          # from the repo root, with the lab and emulator up
 | `interface_up`       | `info`     | zebra `ZEBRA_INTERFACE_UP` |
 | `ospf_neighbor_down` | `warning`  | ospfd `AdjChg: ... -> Deleted\|Down` |
 | `ospf_neighbor_up`   | `info`     | ospfd `AdjChg: ... -> Full` |
+| `configuration_drift` / `configuration_restored` | `warning` / `info` | R2 running configuration |
+| `routing_session_down` / `routing_session_up` | `warning` / `info` | R2 OSPF passive-interface state |
+| `interface_admin_down` / `interface_admin_up` | `warning` / `info` | R2 eth2 administrative state |
+| `routing_service_down` / `routing_service_up` | `critical` / `info` | R3 ospfd process state |
+| `resource_exhaustion` / `resource_recovered` | `critical` / `info` | R3 CPU quota plus process state |
 
 Severity describes what a line means on its own. A down interface is a strong
 signal but not by itself an outage — deciding whether it amounts to one is
@@ -31,6 +41,7 @@ correlation, which belongs to Increment 3.
 
 ```
 src/collector/logTail.ts   follows log files inside a container
+src/observer/              fixed read-only probes and transition tracking
 src/normalize/parser.ts    FRR line -> structured envelope
 src/normalize/rules.ts     structured envelope -> network event
 src/pipeline.ts            buffering, batching, failure isolation
