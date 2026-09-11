@@ -71,18 +71,23 @@ import type { Incident } from './models';
 
       <section class="card">
         <div class="card-head">
-          <h2>GPT investigator</h2>
-          <span class="count">{{ data.agentRuns().length }} recent run(s)</span>
+          <div>
+            <h2>1 · Watcher observations</h2>
+            <p class="section-note">
+              Individual facts physically observed from router state, logs, and reachability probes.
+            </p>
+          </div>
+          <span class="count">{{ data.events().length }} most recent</span>
         </div>
-        <acn-agent-runs [runs]="data.agentRuns()" />
+        <acn-event-feed [events]="data.events()" />
       </section>
 
       <section class="card">
         <div class="card-head">
           <div>
-            <h2>Detected incident records</h2>
+            <h2>2 · Correlated cases</h2>
             <p class="section-note">
-              Rule-based grouping of the fault and telemetry observed in the lab—not GPT analysis.
+              Related watcher observations grouped into one trackable case—not a root-cause answer.
             </p>
           </div>
           <span class="count">
@@ -106,7 +111,7 @@ import type { Incident } from './models';
                   <span class="status" [class.resolved]="incident.status === 'resolved'">
                     {{ incident.status }}
                   </span>
-                  <span class="cause">{{ incident.probableRootCause }}</span>
+                  <span class="grouping">{{ incident.eventCount }} observations grouped</span>
                   <span class="devices">{{ incident.affectedDevices.join(', ') }}</span>
                   <span class="when">{{ started(incident) }}</span>
                 </button>
@@ -121,10 +126,15 @@ import type { Incident } from './models';
 
       <section class="card">
         <div class="card-head">
-          <h2>Normalized events</h2>
-          <span class="count">{{ data.events().length }} most recent</span>
+          <div>
+            <h2>3 · GPT root-cause diagnosis</h2>
+            <p class="section-note">
+              GPT independently interprets neutral evidence; lab truth is revealed only afterward.
+            </p>
+          </div>
+          <span class="count">{{ data.agentRuns().length }} recent run(s)</span>
         </div>
-        <acn-event-feed [events]="data.events()" />
+        <acn-agent-runs [runs]="data.agentRuns()" />
       </section>
     </main>
   `,
@@ -201,7 +211,7 @@ import type { Incident } from './models';
       background: var(--bad-bg); color: var(--bad); text-align: center;
     }
     .status.resolved { background: var(--ok-bg); color: var(--ok); }
-    .cause { font-size: 0.88rem; }
+    .grouping { font-size: 0.82rem; color: var(--muted); }
     .devices, .when { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); }
     @media (max-width: 760px) {
       button.row { grid-template-columns: 1.2rem 4.5rem 1fr; }

@@ -22,9 +22,9 @@ import type { NetworkEvent } from '../models';
             <span class="dev">{{ event.deviceId }}</span>
             <span class="type">{{ event.eventType }}</span>
             <span class="detail">{{ detail(event) }}</span>
-            <!-- Which layer produced this: ICMP probing, or a device's own log. -->
+            <!-- Which independent watcher produced this observation. -->
             <span class="src" [class.log]="event.source === 'layer-zero'">
-              {{ event.source === 'layer-zero' ? 'log' : 'icmp' }}
+              {{ event.source === 'layer-zero' ? 'router watcher' : 'reachability watcher' }}
             </span>
           </li>
         }
@@ -50,7 +50,7 @@ import type { NetworkEvent } from '../models';
       }
       .feed li {
         display: grid;
-        grid-template-columns: 5rem 3rem 11rem 1fr 2.5rem;
+        grid-template-columns: 5rem 3rem 11rem 1fr 9rem;
         gap: 0.5rem;
         align-items: baseline;
         padding: 0.25rem 0.3rem;
@@ -102,13 +102,11 @@ export class EventFeedComponent {
   readonly events = input.required<NetworkEvent[]>();
 
   detail(event: NetworkEvent): string {
-    const iface = event.attributes['interface'];
-    const neighbor = event.attributes['neighborId'];
-
-    const parts: string[] = [];
-    if (typeof iface === 'string') parts.push(iface);
-    if (typeof neighbor === 'string') parts.push(`nbr ${neighbor}`);
-    return parts.join(' ');
+    return Object.entries(event.attributes)
+      .filter((entry): entry is [string, string | number | boolean] =>
+        ['string', 'number', 'boolean'].includes(typeof entry[1]))
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(' · ');
   }
 
   time(value: Date | null): string {
