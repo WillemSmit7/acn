@@ -82,7 +82,8 @@ export class LabActionService {
     }
 
     try {
-      await this.repository.finish(action);
+      const groundTruth = action.status === 'completed' ? scenario.groundTruth : undefined;
+      await this.repository.finish(action, groundTruth);
     } catch (error) {
       this.log(`${action.id} could not persist completion: ${String(error)}`);
     }

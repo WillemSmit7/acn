@@ -84,6 +84,9 @@ export class IncidentService {
         this.logger.error(`Correlation failed for event ${event.id}: ${describe(error)}`);
       }
     }
+    // Persist readiness invalidation promptly when new fault evidence lands;
+    // the periodic tick remains the fallback if a write is already in flight.
+    void this.tick();
   }
 
   /** One evaluation pass: settle root causes, close incidents, persist changes. */

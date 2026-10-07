@@ -19,7 +19,8 @@ usage() {
 Usage: npm run start:all
 
 Starts the lab, Firestore emulator, Health Service, Layer Zero, Incident
-Service, GPT Agent Service, local Lab Controller and Angular visualizer.
+Service, GPT Agent Service, local Lab Controller, guarded Network Controller
+and Angular visualizer.
 
 Environment overrides:
   ACN_WEB_PORT=4300       choose the dashboard port (default: first free 4200+)
@@ -96,6 +97,11 @@ is_acn_visualizer() {
   local port="$1"
   curl --silent --show-error --max-time 1 "http://127.0.0.1:${port}/" 2>/dev/null |
     grep -q '<title>ACN NOC</title>'
+}
+
+is_acn_network_controller() {
+  curl --silent --show-error --max-time 1 "http://127.0.0.1:8788/api/status" 2>/dev/null |
+    grep -q '"adapters"'
 }
 
 wait_for_port() {
@@ -197,6 +203,21 @@ else
   }
 fi
 
+if port_open 8788; then
+  if is_acn_network_controller; then
+    echo "    reusing Network Controller already on 127.0.0.1:8788"
+  else
+    echo "ERROR: port 8788 is occupied by something other than the ACN Network Controller." >&2
+    exit 1
+  fi
+else
+  start_in_dir "network-controller" "${REPO_ROOT}/services/network-controller" node dist/main.js
+  wait_for_port "Network Controller" 8788 30 || {
+    tail -n 40 "${LOG_DIR}/network-controller.log" >&2
+    exit 1
+  }
+fi
+
 web_port="${ACN_WEB_PORT:-}"
 reuse_web=0
 if [ -n "${web_port}" ]; then
@@ -257,6 +278,7 @@ echo " ACN operator stack is ready"
 echo " Dashboard:        ${dashboard_url}"
 echo " Firebase UI:      http://localhost:4000"
 echo " Lab Controller:   http://127.0.0.1:8787"
+echo " Network Controller:http://127.0.0.1:8788"
 echo " Logs:             ${LOG_DIR}"
 echo "============================================================"
 echo "Use the dashboard buttons to break/restore the lab."

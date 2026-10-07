@@ -34,8 +34,12 @@ export class AgentService {
   }
 
   private enqueue(incident: InvestigableIncident): void {
-    if (this.stopped) return;
-    const version = diagnosisVersion(incident.rootCause);
+    if (this.stopped || !incident.investigationReady) return;
+    const version = diagnosisVersion(
+      incident.incidentId,
+      incident.investigationRevision,
+      PROMPT_VERSION,
+    );
     const runId = runIdFor(incident, version);
     if (this.active.has(runId)) return;
     this.active.add(runId);
@@ -68,8 +72,11 @@ export class AgentService {
       }
 
       this.logger.line(`${runId} COLLECTING ${incident.incidentId}`);
-      const evidence = await this.repository.loadEvidence(incident.eventIds);
-      const prompt = buildPrompt(incident, evidence);
+      const { incident: freshIncident, evidence } = await this.reloadStableEvidence(
+        incident.incidentId,
+        incident.investigationRevision,
+      );
+      const prompt = buildPrompt(freshIncident, evidence);
       await this.repository.markAnalyzing(runId, evidence, prompt);
 
       this.logger.line(
@@ -81,11 +88,13 @@ export class AgentService {
         evidence.events.map((event) => event.id),
         evidence.logs.map((log) => log.id),
       );
-      const agreement = agrees(incident, result.conclusion) ? 'agree' : 'disagree';
-      await this.repository.completeRun(runId, { ...result, agreement });
+      const groundTruth = await this.repository.loadGroundTruth(runId);
+      const evaluation = groundTruth === null ? null : evaluate(groundTruth, result.conclusion);
+      await this.repository.completeRun(runId, { ...result, groundTruth, evaluation });
 
       this.logger.line(
-        `${runId} COMPLETED   ${result.conclusion.summary} (${agreement}, ` +
+        `${runId} COMPLETED   ${result.conclusion.summary} (` +
+        `${evaluation === null ? 'unscored' : evaluation.overallMatch ? 'match' : 'mismatch'}, ` +
         `$${result.estimatedCostUsd.toFixed(6)}, ${result.latencyMs}ms)`,
       );
     } catch (error) {
@@ -101,6 +110,34 @@ export class AgentService {
     }
   }
 
+  /**
+   * Re-read the incident and its evidence after claiming. A recovery-only update
+   * may extend the same generation while it is loading, so retry a bounded
+   * number of times; a new fault makes the document not-ready and aborts safely.
+   */
+  private async reloadStableEvidence(
+    incidentId: string,
+    investigationRevision: number,
+  ): Promise<{ incident: InvestigableIncident; evidence: Awaited<ReturnType<AgentRepositoryPort['loadEvidence']>> }> {
+    let incident = await this.repository.loadIncident(incidentId);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (incident === null || incident.investigationRevision !== investigationRevision) {
+        throw new Error(`${incidentId} evidence generation changed after run claim`);
+      }
+
+      const evidence = await this.repository.loadEvidence(incident.eventIds);
+      const latest = await this.repository.loadIncident(incidentId);
+      if (latest === null || latest.investigationRevision !== investigationRevision) {
+        throw new Error(`${incidentId} became unsettled after run claim`);
+      }
+      if (sameStrings(latest.eventIds, incident.eventIds)) return { incident: latest, evidence };
+      incident = latest;
+    }
+
+    throw new Error(`${incidentId} evidence did not stabilize before investigation`);
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
     this.unsubscribe?.();
@@ -109,9 +146,27 @@ export class AgentService {
   }
 }
 
-export function agrees(incident: InvestigableIncident, conclusion: AgentConclusion): boolean {
-  return incident.rootCause.type === conclusion.rootCauseType &&
-    sameStrings(incident.rootCause.devices, conclusion.rootCauseDevices);
+export function evaluate(
+  groundTruth: {
+    rootCauseType: string;
+    rootCauseDevices: string[];
+    expectedRemediationTool: string;
+  },
+  conclusion: AgentConclusion,
+): {
+  typeMatch: boolean;
+  devicesMatch: boolean;
+  remediationMatch: boolean;
+  overallMatch: boolean;
+} {
+  const typeMatch = groundTruth.rootCauseType === conclusion.rootCauseType;
+  const devicesMatch = sameStrings(groundTruth.rootCauseDevices, conclusion.rootCauseDevices);
+  const remediationMatch = groundTruth.expectedRemediationTool ===
+    conclusion.remediationProposal.tool;
+  return {
+    typeMatch, devicesMatch, remediationMatch,
+    overallMatch: typeMatch && devicesMatch && remediationMatch,
+  };
 }
 
 export function validateCitations(
@@ -130,6 +185,13 @@ export function validateCitations(
   }
   if (logIds.length > 0 && conclusion.citedLogIds.length === 0) {
     throw new Error('Model cited no raw logs although raw log evidence was supplied');
+  }
+  const cited = new Set([...conclusion.citedEventIds, ...conclusion.citedLogIds]);
+  if (conclusion.remediationProposal.citedEvidenceIds.length === 0) {
+    throw new Error('Remediation proposal cited no evidence');
+  }
+  for (const id of conclusion.remediationProposal.citedEvidenceIds) {
+    if (!cited.has(id)) throw new Error(`Remediation proposal cited unsupported evidence id ${id}`);
   }
 }
 

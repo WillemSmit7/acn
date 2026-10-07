@@ -47,8 +47,8 @@ check(
   'every run used GPT-5.6 Luna with low reasoning effort',
 );
 check(
-  runs.every((run) => run.agreement === 'agree' || run.agreement === 'disagree'),
-  'every completed run explicitly records agreement or disagreement',
+  runs.every((run) => run.labGroundTruth == null && run.evaluation == null && run.agreement == null),
+  'direct-script investigations remain explicitly unscored without lab-controller truth',
 );
 check(
   runs.every((run) => Array.isArray(run.evidenceRefs?.eventIds) &&
@@ -84,6 +84,11 @@ check(
   completed.every((run) => run.prompt?.version && run.prompt?.developer && run.prompt?.input),
   'the exact reproduction prompt is retained',
 );
+const leaked = [
+  'deterministicBaseline', 'configuration_drift', 'routing_session_down',
+  'interface_admin_down', 'routing_service_down', 'resource_exhaustion',
+].filter((value) => completed.some((run) => run.prompt?.input?.includes(value)));
+check(leaked.length === 0, 'no baseline or cause-revealing event label entered a GPT prompt');
 
 const types = new Set(completed.map((run) => run.conclusion?.rootCauseType));
 for (const type of [
@@ -94,5 +99,5 @@ for (const type of [
   'resource_exhaustion',
 ]) check(types.has(type), `Luna identified ${type}`);
 
-console.log(`\n=== INCREMENT 4 E2E: ${failures === 0 ? GREEN + 'PASS' : RED + 'FAIL (' + failures + ')'}${RESET} ===`);
+console.log(`\n=== INCREMENT 5 BLIND GPT E2E: ${failures === 0 ? GREEN + 'PASS' : RED + 'FAIL (' + failures + ')'}${RESET} ===`);
 process.exit(failures === 0 ? 0 : 1);

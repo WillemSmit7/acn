@@ -100,7 +100,7 @@ interface FaultDialogState {
     @if (visibleEntries().length === 0) {
       <p class="empty">Waiting for live telemetry…</p>
     } @else {
-      <ol class="timeline">
+      <ol class="timeline acn-scroll">
         @for (entry of visibleEntries(); track entry.id) {
           <li [class]="entry.tone">
             <time>{{ time(entry.at) }}</time>

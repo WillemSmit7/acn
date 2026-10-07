@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// ACN Increments 1-4 plus the local operator visualizer.
+// ACN Increments 1-6 plus the local operator visualizer.
 //
 // Every write comes from a backend service using the Admin SDK, which bypasses
 // these rules entirely. Client writes are therefore denied outright: nothing in
@@ -26,9 +26,11 @@ service cloud.firestore {
     match /incidents/{document=**}     { allow read: if true; allow write: if false; }
     match /agentRuns/{document=**}     { allow read: if true; allow write: if false; }
     match /labActions/{document=**}    { allow read: if true; allow write: if false; }
+    match /agentActions/{document=**}  { allow read: if true; allow write: if false; }
+    match /actionAuditEvents/{document=**} { allow read: if true; allow write: if false; }
+    match /networkChanges/{document=**} { allow read: if true; allow write: if false; }
 
-    // Anything not named above stays closed, including the collections later
-    // increments add (agentActions, networkChanges).
+    // Anything not named above stays closed.
     match /{document=**} {
       allow read, write: if false;
     }

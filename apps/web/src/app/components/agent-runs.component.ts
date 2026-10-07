@@ -29,7 +29,7 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                 </span>
                 @if (run.agreement) {
                   <span class="agreement" [class.no]="run.agreement === 'disagree'">
-                    {{ run.agreement === 'agree' ? 'agrees' : 'disagrees' }}
+                    {{ run.agreement === 'agree' ? 'ground-truth match' : 'ground-truth mismatch' }}
                   </span>
                 }
               </div>
@@ -49,16 +49,36 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
               @if (run.conclusion; as conclusion) {
                 <div class="comparison">
                 <div>
-                  <h4>Deterministic baseline</h4>
-                  <strong>{{ run.deterministicRootCause?.summary ?? 'unknown' }}</strong>
+                  <h4>Lab ground truth</h4>
+                  @if (run.labGroundTruth; as truth) {
+                    <strong>{{ label(truth.rootCauseType) }}</strong>
+                    <span class="confidence">{{ truth.rootCauseDevices.join(', ') || 'no device' }}</span>
+                    <span class="confidence">known repair: {{ label(truth.expectedRemediationTool) }}</span>
+                  } @else {
+                    <strong>Unscored production-style run</strong>
+                    <span class="confidence">No controller-created truth was associated</span>
+                  }
                 </div>
                 <span class="arrow">→</span>
                 <div>
                   <h4>GPT investigation</h4>
                   <strong>{{ conclusion.summary }}</strong>
                   <span class="confidence">{{ conclusion.confidence }} confidence</span>
+                  <span class="confidence">
+                    GPT repair guess: {{ label(conclusion.remediationProposal.tool) }}
+                  </span>
                 </div>
                 </div>
+
+                @if (run.evaluation; as evaluation) {
+                  <div class="metrics evaluation">
+                    <span>{{ evaluation.typeMatch ? '✓' : '✕' }} cause type</span>
+                    <span>{{ evaluation.devicesMatch ? '✓' : '✕' }} device set</span>
+                    <span>
+                      {{ evaluation.remediationMatch ? '✓ GPT repair guess correct' : '✕ GPT repair guess incorrect' }}
+                    </span>
+                  </div>
+                }
 
                 <h4>Reasoning</h4>
                 <ul class="reasoning">
@@ -102,7 +122,7 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                 @if (run.prompt) {
                   <details class="prompt">
                     <summary>Reproduction prompt · {{ run.promptVersion }}</summary>
-                    <pre>{{ run.prompt.developer }}\n\n{{ run.prompt.input }}</pre>
+                    <pre class="acn-scroll">{{ run.prompt.developer }}\n\n{{ run.prompt.input }}</pre>
                   </details>
                 }
               }
@@ -177,6 +197,10 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
 })
 export class AgentRunsComponent {
   readonly runs = input.required<AgentRun[]>();
+
+  label(value: string): string {
+    return value.replaceAll('_', ' ');
+  }
   private readonly data = inject(DataService);
 
   stage(run: AgentRun): string {

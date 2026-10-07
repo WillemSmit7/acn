@@ -23,7 +23,7 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
   required: [
     'rootCauseType', 'rootCauseDevices', 'summary', 'confidence', 'reasoning',
-    'citedEventIds', 'citedLogIds',
+    'citedEventIds', 'citedLogIds', 'remediationProposal',
   ],
   properties: {
     rootCauseType: {
@@ -43,12 +43,29 @@ const OUTPUT_SCHEMA = {
     reasoning: { type: 'array', items: { type: 'string' } },
     citedEventIds: { type: 'array', items: { type: 'string' } },
     citedLogIds: { type: 'array', items: { type: 'string' } },
+    remediationProposal: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['tool', 'rationale', 'citedEvidenceIds'],
+      properties: {
+        tool: {
+          type: 'string',
+          enum: [
+            'restore_ospf_cost', 'restore_ospf_adjacency', 'enable_interface',
+            'restart_routing_service', 'restore_resource_profile',
+            'escalate_no_safe_action',
+          ],
+        },
+        rationale: { type: 'string' },
+        citedEvidenceIds: { type: 'array', items: { type: 'string' } },
+      },
+    },
   },
 } as const;
 
 type FetchLike = typeof fetch;
 
-/** Minimal Responses API client. The service needs no tools and has no actions. */
+/** Minimal Responses API client. GPT diagnoses supplied evidence but has no action tools. */
 export class OpenAIInvestigatorClient implements InvestigatorClient {
   constructor(
     private readonly config: AppConfig,
@@ -165,6 +182,21 @@ function parseConclusion(value: unknown): AgentConclusion {
     reasoning: stringArray(data['reasoning'], 'reasoning'),
     citedEventIds: stringArray(data['citedEventIds'], 'citedEventIds'),
     citedLogIds: stringArray(data['citedLogIds'], 'citedLogIds'),
+    remediationProposal: parseRemediationProposal(data['remediationProposal']),
+  };
+}
+
+function parseRemediationProposal(value: unknown): AgentConclusion['remediationProposal'] {
+  const data = object(value, 'remediationProposal');
+  const tool = requiredString(data['tool'], 'remediationProposal.tool');
+  if (![
+    'restore_ospf_cost', 'restore_ospf_adjacency', 'enable_interface',
+    'restart_routing_service', 'restore_resource_profile', 'escalate_no_safe_action',
+  ].includes(tool)) throw new Error(`Invalid remediation tool: ${tool}`);
+  return {
+    tool: tool as AgentConclusion['remediationProposal']['tool'],
+    rationale: requiredString(data['rationale'], 'remediationProposal.rationale'),
+    citedEvidenceIds: stringArray(data['citedEvidenceIds'], 'remediationProposal.citedEvidenceIds'),
   };
 }
 
