@@ -91,6 +91,10 @@ export class IncidentRepository {
           rootCause: incident.rootCause,
           eventIds: incident.eventIds,
           eventCount: incident.eventCount,
+          investigationReady: incident.investigationReady,
+          settledAt:
+            incident.settledAt === null ? null : Timestamp.fromDate(incident.settledAt),
+          investigationRevision: incident.investigationRevision,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },

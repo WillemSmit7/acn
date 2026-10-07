@@ -55,7 +55,7 @@ acn_stop_service() {
 # Belt and braces: nothing matching an ACN service entrypoint may survive a
 # test, whatever happened to the pids we were tracking.
 acn_sweep_services() {
-  local pattern='services/(health-service|layer-zero|incident-service|agent-service|lab-controller)/(dist/index\.js|src/index\.ts)'
+  local pattern='services/(health-service|layer-zero|incident-service|agent-service|lab-controller)/(dist/index\.js|src/index\.ts)|services/network-controller/(dist/main\.js|src/main\.ts)'
   local survivors
   survivors="$(pgrep -f "${pattern}" 2>/dev/null || true)"
   [ -z "${survivors}" ] && return 0

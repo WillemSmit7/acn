@@ -74,6 +74,9 @@ export interface Incident {
   rootCause: RootCause | null;
   eventIds: string[];
   eventCount: number;
+  investigationReady: boolean;
+  settledAt: Date | null;
+  investigationRevision: number;
 }
 
 export interface AgentConclusion {
@@ -154,6 +157,51 @@ export interface LabAction {
   exitCode: number | null;
   error: string | null;
   requestedAt: Date | null;
+  completedAt: Date | null;
+}
+
+export type RemediationTool = AgentConclusion['remediationProposal']['tool'];
+export type AgentActionStatus =
+  | 'proposed' | 'approved' | 'rejected' | 'executing' | 'verifying'
+  | 'succeeded' | 'failed' | 'escalated';
+
+export interface AgentAction {
+  id: string;
+  actionId: string;
+  incidentId: string;
+  agentRunId: string;
+  tool: RemediationTool;
+  rationale: string;
+  citedEvidenceIds: string[];
+  target: { deviceId: 'r2' | 'r3'; component: string } | null;
+  risk: 'none' | 'medium' | 'high';
+  approvalRequired: boolean;
+  status: AgentActionStatus;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  error: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface ActionAuditEvent {
+  id: string;
+  actionId: string;
+  actor: 'ai' | 'human' | 'policy' | 'controller' | 'observer';
+  transition: string;
+  reason: string;
+  occurredAt: Date | null;
+}
+
+export interface NetworkChange {
+  id: string;
+  actionId: string;
+  operation: string;
+  status: string;
+  beforeState: Record<string, unknown> | null;
+  afterState: Record<string, unknown> | null;
+  verification: { recovered: boolean; reason: string; evidenceIds: string[] } | null;
+  startedAt: Date | null;
   completedAt: Date | null;
 }
 

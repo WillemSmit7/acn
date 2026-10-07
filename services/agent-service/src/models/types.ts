@@ -15,6 +15,9 @@ export interface InvestigableIncident {
   symptoms: string[];
   affectedDevices: string[];
   eventIds: string[];
+  investigationReady: boolean;
+  settledAt: string;
+  investigationRevision: number;
 }
 
 export interface EvidenceEvent {
@@ -115,6 +118,7 @@ export interface RunCompletion extends ModelResult {
 
 export interface AgentRepositoryPort {
   watchIncidents(onIncidents: (incidents: InvestigableIncident[]) => void): () => void;
+  loadIncident(incidentId: string): Promise<InvestigableIncident | null>;
   claimRun(claim: RunClaim): Promise<boolean>;
   loadEvidence(eventIds: string[]): Promise<EvidenceBundle>;
   loadGroundTruth(runId: string): Promise<LabGroundTruth | null>;

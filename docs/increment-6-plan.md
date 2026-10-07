@@ -105,6 +105,11 @@ Network Controller approval endpoint, which applies server-side transitions.
 7. Add the remaining four repair adapters one at a time, each with its own
    precondition and recovery test.
 
+Steps 1–7 are implemented. Each mutating tool has fixed argv, a distinct
+precondition and observer-backed verification. Focused automated coverage is
+green, and the all-scenario live-lab fixture script awaits an environment with
+working Docker access before live acceptance can be claimed.
+
 ## Exit criteria
 
 - Fuzzed or malicious model arguments cannot reach a process invocation.

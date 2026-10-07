@@ -16,20 +16,27 @@ ${DOCKER} exec clab-acn-r2 vtysh \
   -c 'router ospf' -c 'no passive-interface eth2'
 
 echo "==> Removing r3 resource pressure and restoring ospfd"
+# Lift resource pressure before cleanup so the recovery process is not starved.
+# One CPU is ACN's explicit approved baseline; zero-valued updates are not
+# reflected reliably by all Docker engines.
+${DOCKER} update --cpus 1 clab-acn-r3 >/dev/null
 ${DOCKER} exec clab-acn-r3 sh -c '
   if [ -s /tmp/acn-resource-pids ]; then
-    while read -r pid; do kill "$pid" 2>/dev/null || true; done < /tmp/acn-resource-pids
+    while read -r pid; do
+      [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" != yes ] || kill "$pid" 2>/dev/null || true
+    done < /tmp/acn-resource-pids
     rm -f /tmp/acn-resource-pids
   fi
   if pidof ospfd >/dev/null 2>&1; then kill -CONT $(pidof ospfd) 2>/dev/null || true; fi
   if [ -s /tmp/acn-watchfrr-stopped ]; then
-    kill -CONT $(cat /tmp/acn-watchfrr-stopped) 2>/dev/null || true
+    watch=$(cat /tmp/acn-watchfrr-stopped 2>/dev/null || true)
+    [ "$(cat "/proc/$watch/comm" 2>/dev/null || true)" = watchfrr ] || watch=$(pidof watchfrr 2>/dev/null || true)
+    [ -z "$watch" ] || kill -CONT $watch 2>/dev/null || true
     rm -f /tmp/acn-watchfrr-stopped
   fi
   sleep 2
   if ! pidof ospfd >/dev/null 2>&1; then /usr/lib/frr/frrinit.sh restart; fi
 '
-${DOCKER} update --cpus 0 clab-acn-r3 >/dev/null
 
 echo "==> Baseline restored; the autonomous observer will emit recovery transitions"
 echo "==> Allow OSPF one dead interval to reconverge"

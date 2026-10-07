@@ -12,7 +12,7 @@ import type { NetworkEvent } from '../models';
         <code>./lab/scenarios/03-interface-disabled.sh</code>
       </p>
     } @else {
-      <ul class="feed">
+      <ul class="feed acn-scroll">
         @for (event of events(); track event.id) {
           <li
             [class.critical]="event.severity === 'critical'"

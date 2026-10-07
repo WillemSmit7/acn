@@ -34,8 +34,12 @@ export class AgentService {
   }
 
   private enqueue(incident: InvestigableIncident): void {
-    if (this.stopped) return;
-    const version = diagnosisVersion(incident.incidentId, PROMPT_VERSION);
+    if (this.stopped || !incident.investigationReady) return;
+    const version = diagnosisVersion(
+      incident.incidentId,
+      incident.investigationRevision,
+      PROMPT_VERSION,
+    );
     const runId = runIdFor(incident, version);
     if (this.active.has(runId)) return;
     this.active.add(runId);
@@ -68,8 +72,11 @@ export class AgentService {
       }
 
       this.logger.line(`${runId} COLLECTING ${incident.incidentId}`);
-      const evidence = await this.repository.loadEvidence(incident.eventIds);
-      const prompt = buildPrompt(incident, evidence);
+      const { incident: freshIncident, evidence } = await this.reloadStableEvidence(
+        incident.incidentId,
+        incident.investigationRevision,
+      );
+      const prompt = buildPrompt(freshIncident, evidence);
       await this.repository.markAnalyzing(runId, evidence, prompt);
 
       this.logger.line(
@@ -101,6 +108,34 @@ export class AgentService {
         }
       }
     }
+  }
+
+  /**
+   * Re-read the incident and its evidence after claiming. A recovery-only update
+   * may extend the same generation while it is loading, so retry a bounded
+   * number of times; a new fault makes the document not-ready and aborts safely.
+   */
+  private async reloadStableEvidence(
+    incidentId: string,
+    investigationRevision: number,
+  ): Promise<{ incident: InvestigableIncident; evidence: Awaited<ReturnType<AgentRepositoryPort['loadEvidence']>> }> {
+    let incident = await this.repository.loadIncident(incidentId);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (incident === null || incident.investigationRevision !== investigationRevision) {
+        throw new Error(`${incidentId} evidence generation changed after run claim`);
+      }
+
+      const evidence = await this.repository.loadEvidence(incident.eventIds);
+      const latest = await this.repository.loadIncident(incidentId);
+      if (latest === null || latest.investigationRevision !== investigationRevision) {
+        throw new Error(`${incidentId} became unsettled after run claim`);
+      }
+      if (sameStrings(latest.eventIds, incident.eventIds)) return { incident: latest, evidence };
+      incident = latest;
+    }
+
+    throw new Error(`${incidentId} evidence did not stabilize before investigation`);
   }
 
   async stop(): Promise<void> {

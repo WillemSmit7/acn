@@ -122,7 +122,7 @@ import type { AgentRun, NetworkEvent, NetworkLog } from '../models';
                 @if (run.prompt) {
                   <details class="prompt">
                     <summary>Reproduction prompt · {{ run.promptVersion }}</summary>
-                    <pre>{{ run.prompt.developer }}\n\n{{ run.prompt.input }}</pre>
+                    <pre class="acn-scroll">{{ run.prompt.developer }}\n\n{{ run.prompt.input }}</pre>
                   </details>
                 }
               }

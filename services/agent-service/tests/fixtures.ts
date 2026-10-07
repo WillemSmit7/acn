@@ -17,6 +17,9 @@ export const linkIncident: InvestigableIncident = {
   symptoms: ['r2 eth2 down', 'r3 eth1 down', 'r3 unreachable', 'pc2 unreachable'],
   affectedDevices: ['pc2', 'r2', 'r3'],
   eventIds: ['evt-r2-if', 'evt-r2-ospf', 'evt-r3-if', 'evt-r3-ospf', 'evt-r3-icmp', 'evt-pc2-icmp'],
+  investigationReady: true,
+  settledAt: '2026-08-25T19:14:53.000Z',
+  investigationRevision: 1,
 };
 
 export const linkEvidence: EvidenceBundle = {

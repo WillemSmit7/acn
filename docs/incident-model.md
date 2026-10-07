@@ -64,7 +64,9 @@ covers. It absorbs related events — same device, an adjacent device, or a name
 OSPF peer already implicated — within the correlation window.
 
 **The root cause is judged only after a settle window**, and only from events
-before the first recovery. Two hard-won reasons:
+before the first recovery. The same persistence write publishes the final
+evidence IDs, `settledAt`, and `investigationReady: true`, so consumers cannot
+observe a ready diagnosis with a partial evidence list. Two hard-won reasons:
 
 - Judged immediately, every link failure would briefly be misreported as a
   device failure, because the far end has not had time to corroborate yet.
@@ -72,8 +74,11 @@ before the first recovery. Two hard-won reasons:
   exonerate itself: r3 comes back, starts logging, and a correctly diagnosed
   device failure turns into a "confirmed link failure".
 
-Once a definite conclusion is reached it is frozen. The diagnosis describes what
-broke; recovery is not evidence about that.
+Once a definite conclusion is reached it is frozen across recovery-only updates.
+A new fault attached to the still-open incident invalidates readiness immediately,
+and creates a new agent-investigation revision only after another quiet period.
+The deterministic correlator cause continues to describe the original failure;
+recovery is not evidence about that.
 
 **Resolution follows the appropriate live signal.** Native link/device outages
 follow observed reachability rather than a tally of log recoveries. That tally

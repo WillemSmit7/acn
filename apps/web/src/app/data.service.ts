@@ -12,6 +12,8 @@ import {
 import { db } from './firebase';
 import type {
   AgentConclusion,
+  ActionAuditEvent,
+  AgentAction,
   AgentRun,
   Device,
   DeviceState,
@@ -19,6 +21,7 @@ import type {
   Incident,
   LabAction,
   NetworkEvent,
+  NetworkChange,
   NetworkLog,
   RootCause,
 } from './models';
@@ -41,6 +44,9 @@ export class DataService {
   readonly incidents = signal<Incident[]>([]);
   readonly agentRuns = signal<AgentRun[]>([]);
   readonly labActions = signal<LabAction[]>([]);
+  readonly agentActions = signal<AgentAction[]>([]);
+  readonly actionAuditEvents = signal<ActionAuditEvent[]>([]);
+  readonly networkChanges = signal<NetworkChange[]>([]);
   readonly logs = signal<NetworkLog[]>([]);
   readonly connected = signal(false);
   readonly error = signal<string | null>(null);
@@ -111,6 +117,21 @@ export class DataService {
     this.listen(
       query(collection(store, 'labActions'), orderBy('requestedAt', 'desc'), limit(50)),
       (docs) => this.labActions.set(docs.map(toLabAction)),
+    );
+
+    this.listen(
+      query(collection(store, 'agentActions'), orderBy('createdAt', 'desc'), limit(50)),
+      (docs) => this.agentActions.set(docs.map(toAgentAction)),
+    );
+
+    this.listen(
+      query(collection(store, 'actionAuditEvents'), orderBy('occurredAt', 'desc'), limit(200)),
+      (docs) => this.actionAuditEvents.set(docs.map(toActionAuditEvent)),
+    );
+
+    this.listen(
+      query(collection(store, 'networkChanges'), orderBy('startedAt', 'desc'), limit(50)),
+      (docs) => this.networkChanges.set(docs.map(toNetworkChange)),
     );
 
     this.listen(
@@ -253,6 +274,10 @@ function toIncident({ id, data }: { id: string; data: DocumentData }): Incident 
     rootCause,
     eventIds: strArray(data['eventIds']),
     eventCount: typeof data['eventCount'] === 'number' ? data['eventCount'] : 0,
+    investigationReady: data['investigationReady'] === true,
+    settledAt: toDate(data['settledAt']),
+    investigationRevision:
+      typeof data['investigationRevision'] === 'number' ? data['investigationRevision'] : 0,
   };
 }
 
@@ -336,6 +361,66 @@ function toLabAction({ id, data }: { id: string; data: DocumentData }): LabActio
   };
 }
 
+function toAgentAction({ id, data }: { id: string; data: DocumentData }): AgentAction {
+  const target = object(data['target']);
+  const device = str(target['deviceId']);
+  const status = str(data['status'], 'proposed') as AgentAction['status'];
+  const risk = str(data['risk'], 'high');
+  return {
+    id,
+    actionId: str(data['actionId'], id),
+    incidentId: str(data['incidentId']),
+    agentRunId: str(data['agentRunId']),
+    tool: remediationTool(data['tool']),
+    rationale: str(data['rationale']),
+    citedEvidenceIds: strArray(data['citedEvidenceIds']),
+    target: Object.keys(target).length === 0 ? null : {
+      deviceId: device === 'r3' ? 'r3' : 'r2',
+      component: str(target['component']),
+    },
+    risk: risk === 'none' || risk === 'medium' ? risk : 'high',
+    approvalRequired: data['approvalRequired'] === true,
+    status,
+    approvedBy: typeof data['approvedBy'] === 'string' ? data['approvedBy'] : null,
+    approvedAt: toDate(data['approvedAt']),
+    error: typeof data['error'] === 'string' ? data['error'] : null,
+    createdAt: toDate(data['createdAt']),
+    updatedAt: toDate(data['updatedAt']),
+  };
+}
+
+function toActionAuditEvent({ id, data }: { id: string; data: DocumentData }): ActionAuditEvent {
+  const actor = str(data['actor'], 'controller');
+  return {
+    id,
+    actionId: str(data['actionId']),
+    actor: actor === 'ai' || actor === 'human' || actor === 'policy' || actor === 'observer'
+      ? actor : 'controller',
+    transition: str(data['transition']),
+    reason: str(data['reason']),
+    occurredAt: toDate(data['occurredAt']),
+  };
+}
+
+function toNetworkChange({ id, data }: { id: string; data: DocumentData }): NetworkChange {
+  const verification = object(data['verification']);
+  return {
+    id,
+    actionId: str(data['actionId']),
+    operation: str(data['operation']),
+    status: str(data['status']),
+    beforeState: nullableObject(data['beforeState']),
+    afterState: nullableObject(data['afterState']),
+    verification: Object.keys(verification).length === 0 ? null : {
+      recovered: verification['recovered'] === true,
+      reason: str(verification['reason']),
+      evidenceIds: strArray(verification['evidenceIds']),
+    },
+    startedAt: toDate(data['startedAt']),
+    completedAt: toDate(data['completedAt']),
+  };
+}
+
 function toRootCause(value: unknown): RootCause | null {
   const raw = object(value);
   if (Object.keys(raw).length === 0) return null;
@@ -402,6 +487,11 @@ function remediationTool(value: unknown): AgentConclusion['remediationProposal']
 
 function object(value: unknown): DocumentData {
   return typeof value === 'object' && value !== null ? value as DocumentData : {};
+}
+
+function nullableObject(value: unknown): Record<string, unknown> | null {
+  const result = object(value);
+  return Object.keys(result).length === 0 ? null : result;
 }
 
 function count(value: unknown): number {

@@ -375,3 +375,78 @@ test('a frozen cause still updates its independently observed impact', () => {
   assert.deepEqual(incident?.rootCause.observedUnreachable, ['pc2', 'r3']);
   assert.equal(incident?.rootCause.predictionMatches, true);
 });
+
+test('an incident becomes investigation-ready only after the latest evidence settles', () => {
+  resetClock();
+  const correlator = new Correlator(OPTIONS);
+  correlator.observe(interfaceDown('r2', 'eth2', 0));
+
+  let incident = correlator.openIncidents()[0];
+  assert.equal(incident?.investigationReady, false);
+  assert.equal(incident?.settledAt, null);
+  assert.equal(incident?.investigationRevision, 0);
+
+  const adminDown: ObservedEvent = {
+    id: 'evt-admin-during-settle', deviceId: 'r2', eventType: 'interface_admin_down',
+    severity: 'warning', source: 'layer-zero', sourceLogId: 'log-admin-during-settle',
+    attributes: { interface: 'eth2', adminState: 'down' },
+    occurredAt: afterSettle(9),
+  };
+  correlator.observe(adminDown);
+  correlator.tick(afterSettle(15));
+  assert.equal(correlator.openIncidents()[0]?.investigationReady, false);
+
+  correlator.tick(afterSettle(20));
+  incident = correlator.openIncidents()[0];
+  assert.equal(incident?.investigationReady, true);
+  assert.equal(incident?.settledAt?.toISOString(), afterSettle(20).toISOString());
+  assert.equal(incident?.investigationRevision, 1);
+  assert.ok(incident?.eventIds.includes(adminDown.id));
+  assert.equal(incident?.rootCause.type, 'interface_misconfiguration');
+});
+
+test('a repeated fault in an open incident invalidates the old generation until it settles', () => {
+  resetClock();
+  const correlator = new Correlator(OPTIONS);
+  const first: ObservedEvent = {
+    id: 'evt-admin-first', deviceId: 'r2', eventType: 'interface_admin_down',
+    severity: 'warning', source: 'layer-zero', sourceLogId: 'log-admin-first',
+    attributes: { interface: 'eth2', adminState: 'down' }, occurredAt: afterSettle(0),
+  };
+  correlator.observe(first);
+  correlator.tick(afterSettle(20));
+  assert.equal(correlator.openIncidents()[0]?.investigationRevision, 1);
+
+  const repeated = { ...first, id: 'evt-admin-repeat', sourceLogId: 'log-admin-repeat',
+    occurredAt: afterSettle(30) };
+  correlator.observe(repeated);
+  let incident = correlator.openIncidents()[0];
+  assert.equal(correlator.openIncidents().length, 1);
+  assert.equal(incident?.investigationReady, false);
+  assert.equal(incident?.settledAt, null);
+  assert.equal(incident?.investigationRevision, 1);
+
+  correlator.tick(afterSettle(45));
+  incident = correlator.openIncidents()[0];
+  assert.equal(incident?.investigationReady, true);
+  assert.equal(incident?.investigationRevision, 2);
+  assert.deepEqual(incident?.eventIds, [first.id, repeated.id]);
+});
+
+test('late pre-recovery administrative evidence remains in the chronological fault phase', () => {
+  resetClock();
+  const correlator = new Correlator(OPTIONS);
+  correlator.observe(interfaceDown('r2', 'eth2', 0));
+  correlator.observe(interfaceUp('r2', 'eth2', 20));
+  correlator.observe({
+    id: 'evt-admin-late', deviceId: 'r2', eventType: 'interface_admin_down',
+    severity: 'warning', source: 'layer-zero', sourceLogId: 'log-admin-late',
+    attributes: { interface: 'eth2', adminState: 'down' }, occurredAt: afterSettle(5),
+  });
+  correlator.tick(afterSettle(40));
+
+  const incident = correlator.openIncidents()[0];
+  assert.equal(incident?.investigationReady, true);
+  assert.equal(incident?.rootCause.type, 'interface_misconfiguration');
+  assert.match(incident?.rootCause.summary ?? '', /administratively disabled/i);
+});

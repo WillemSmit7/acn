@@ -150,6 +150,9 @@ export class Correlator {
       },
       eventIds: [],
       eventCount: 0,
+      investigationReady: false,
+      settledAt: null,
+      investigationRevision: 0,
     };
 
     const entry: OpenIncident = {
@@ -190,6 +193,8 @@ export class Correlator {
 
     this.events.set(event.id, event);
     entry.settled = false;
+    incident.investigationReady = false;
+    incident.settledAt = null;
     entry.dirty = true;
   }
 
@@ -249,6 +254,9 @@ export class Correlator {
       if (!entry.settled && quietFor >= this.options.settleMs) {
         this.settle(entry);
         entry.settled = true;
+        entry.incident.investigationReady = true;
+        entry.incident.settledAt = now;
+        entry.incident.investigationRevision += 1;
         entry.dirty = true;
 
         const { type } = entry.incident.rootCause;
@@ -350,8 +358,11 @@ function faultKey(event: Pick<ObservedEvent, 'deviceId' | 'eventType' | 'attribu
  * later events belong to the recovery narrative rather than to the diagnosis.
  */
 function eventsBeforeRecovery(events: ObservedEvent[]): ObservedEvent[] {
-  const firstRecovery = events.findIndex((event) => isRecoveryEvent(event.eventType));
-  return firstRecovery === -1 ? events : events.slice(0, firstRecovery);
+  const chronological = [...events].sort((left, right) =>
+    left.occurredAt.getTime() - right.occurredAt.getTime() || left.id.localeCompare(right.id),
+  );
+  const firstRecovery = chronological.findIndex((event) => isRecoveryEvent(event.eventType));
+  return firstRecovery === -1 ? chronological : chronological.slice(0, firstRecovery);
 }
 
 function sameDevices(a: string[], b: string[]): boolean {

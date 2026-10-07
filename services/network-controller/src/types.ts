@@ -57,9 +57,12 @@ export interface AgentAction extends ActionProposal {
   approvalRequired: boolean;
   status: ActionStatus;
   approvedBy: string | null;
+  approvedAt: Date | null;
   preflight: PreflightResult | null;
   verification: VerificationResult | null;
   error: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 }
 
 export interface AuditEvent {
@@ -73,6 +76,7 @@ export interface AuditEvent {
 export interface ActionRepositoryPort {
   createOrGet(action: AgentAction, audit: AuditEvent): Promise<{ action: AgentAction; created: boolean }>;
   get(actionId: string): Promise<AgentAction | null>;
+  list(): Promise<AgentAction[]>;
   transition(
     actionId: string,
     allowedFrom: ActionStatus[],
@@ -82,7 +86,7 @@ export interface ActionRepositoryPort {
 }
 
 export interface RemediationExecutorPort {
-  preflight(tool: RemediationTool): Promise<PreflightResult>;
-  execute(tool: RemediationTool): Promise<void>;
+  preflight(action: AgentAction): Promise<PreflightResult>;
+  execute(action: AgentAction): Promise<void>;
   verify(action: AgentAction): Promise<VerificationResult>;
 }

@@ -6,6 +6,7 @@ import { IncidentDetailComponent } from './components/incident-detail.component'
 import { EventFeedComponent } from './components/event-feed.component';
 import { AgentRunsComponent } from './components/agent-runs.component';
 import { OperationsConsoleComponent } from './components/operations-console.component';
+import { RemediationActionsComponent } from './components/remediation-actions.component';
 import type { Incident } from './models';
 
 /**
@@ -24,6 +25,7 @@ import type { Incident } from './models';
     IncidentDetailComponent,
     AgentRunsComponent,
     OperationsConsoleComponent,
+    RemediationActionsComponent,
     EventFeedComponent,
   ],
   template: `
@@ -66,7 +68,8 @@ import type { Incident } from './models';
           [logs]="data.logs()"
           [incidents]="data.incidents()"
           [agentRuns]="data.agentRuns()"
-          [actions]="data.labActions()" />
+          [actions]="data.labActions()"
+        />
       </section>
 
       <section class="card">
@@ -74,7 +77,8 @@ import type { Incident } from './models';
           <div>
             <h2>1 · Watcher observations</h2>
             <p class="section-note">
-              Individual facts physically observed from router state, logs, and reachability probes.
+              Individual facts physically observed from router state, logs, and
+              reachability probes.
             </p>
           </div>
           <span class="count">{{ data.events().length }} most recent</span>
@@ -87,11 +91,13 @@ import type { Incident } from './models';
           <div>
             <h2>2 · Correlated cases</h2>
             <p class="section-note">
-              Related watcher observations grouped into one trackable case—not a root-cause answer.
+              Related watcher observations grouped into one trackable case—not a
+              root-cause answer.
             </p>
           </div>
           <span class="count">
-            {{ data.openIncidents().length }} open / {{ data.incidents().length }} total
+            {{ data.openIncidents().length }} open /
+            {{ data.incidents().length }} total
           </span>
         </div>
 
@@ -104,15 +110,27 @@ import type { Incident } from './models';
           <ul class="incidents">
             @for (incident of data.incidents(); track incident.id) {
               <li [class.open]="incident.status === 'open'">
-                <button class="row" (click)="toggle(incident)"
-                        [attr.aria-expanded]="isExpanded(incident)">
-                  <span class="chev">{{ isExpanded(incident) ? '&#9662;' : '&#9656;' }}</span>
+                <button
+                  class="row"
+                  (click)="toggle(incident)"
+                  [attr.aria-expanded]="isExpanded(incident)"
+                >
+                  <span class="chev">{{
+                    isExpanded(incident) ? '&#9662;' : '&#9656;'
+                  }}</span>
                   <span class="id">{{ incident.incidentId }}</span>
-                  <span class="status" [class.resolved]="incident.status === 'resolved'">
+                  <span
+                    class="status"
+                    [class.resolved]="incident.status === 'resolved'"
+                  >
                     {{ incident.status }}
                   </span>
-                  <span class="grouping">{{ incident.eventCount }} observations grouped</span>
-                  <span class="devices">{{ incident.affectedDevices.join(', ') }}</span>
+                  <span class="grouping"
+                    >{{ incident.eventCount }} observations grouped</span
+                  >
+                  <span class="devices">{{
+                    incident.affectedDevices.join(', ')
+                  }}</span>
                   <span class="when">{{ started(incident) }}</span>
                 </button>
                 @if (isExpanded(incident)) {
@@ -129,95 +147,226 @@ import type { Incident } from './models';
           <div>
             <h2>3 · GPT root-cause diagnosis</h2>
             <p class="section-note">
-              GPT independently interprets neutral evidence; lab truth is revealed only afterward.
+              GPT independently interprets neutral evidence; lab truth is
+              revealed only afterward.
             </p>
           </div>
           <span class="count">{{ data.agentRuns().length }} recent run(s)</span>
         </div>
         <acn-agent-runs [runs]="data.agentRuns()" />
       </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>4 · Human-authorized repair</h2>
+            <p class="section-note">
+              GPT's proposal is inert until a named operator approves a fixed,
+              code-owned repair. Success requires fresh watcher evidence and
+              incident resolution.
+            </p>
+          </div>
+          <span class="count">{{ data.agentActions().length }} action(s)</span>
+        </div>
+        <acn-remediation-actions
+          [actions]="data.agentActions()"
+          [audits]="data.actionAuditEvents()"
+          [changes]="data.networkChanges()"
+        />
+      </section>
     </main>
   `,
-  styles: [`
-    :host {
-      --bg: #0f1115; --panel: #171a21; --panel-2: #1d2029; --chip: #272b36;
-      --line: #2a2e3a; --text: #e6e8ee; --muted: #8b93a7;
-      --ok: #48c78e; --ok-bg: #10281f; --bad: #f14668; --bad-bg: #2a141a;
-      --warn: #ffbf5f; --accent: #5aa9e6;
-      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-      display: block; min-height: 100vh; background: var(--bg); color: var(--text);
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-    header {
-      display: flex; justify-content: space-between; align-items: center;
-      gap: 1rem; flex-wrap: wrap;
-      padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--line);
-    }
-    .brand { display: flex; align-items: baseline; gap: 0.6rem; }
-    h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.12em; }
-    .sub { color: var(--muted); font-size: 0.8rem; }
-    .conn {
-      display: flex; align-items: center; gap: 0.4rem;
-      font-size: 0.75rem; color: var(--muted); font-family: var(--mono);
-    }
-    .dot {
-      width: 0.5rem; height: 0.5rem; border-radius: 50%;
-      background: var(--warn);
-    }
-    .conn.up .dot { background: var(--ok); }
-    .host { opacity: 0.7; }
-    .error {
-      margin: 1rem 1.2rem; padding: 0.7rem 0.9rem; border-radius: 6px;
-      background: var(--bad-bg); border: 1px solid var(--bad); font-size: 0.85rem;
-    }
-    .error code { font-family: var(--mono); }
-    main {
-      display: flex; flex-direction: column; gap: 1rem;
-      padding: 1.2rem; max-width: 78rem; margin: 0 auto;
-    }
-    .card {
-      background: var(--panel); border: 1px solid var(--line);
-      border-radius: 10px; padding: 0.9rem 1rem;
-    }
-    .card-head { display: flex; justify-content: space-between; align-items: baseline; }
-    .card-head h2 { margin-bottom: 0; }
-    .section-note { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.72rem; }
-    h2 {
-      margin: 0 0 0.7rem; font-size: 0.75rem; text-transform: uppercase;
-      letter-spacing: 0.1em; color: var(--muted);
-    }
-    .count { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); }
-    .empty { color: var(--muted); font-size: 0.85rem; margin: 0.6rem 0 0; }
-    .empty code { font-family: var(--mono); font-size: 0.78rem; color: var(--accent); }
-    ul.incidents { list-style: none; margin: 0; padding: 0; }
-    ul.incidents > li {
-      border: 1px solid var(--line); border-radius: 8px;
-      margin-bottom: 0.5rem; overflow: hidden; background: var(--panel-2);
-    }
-    ul.incidents > li.open { border-left: 3px solid var(--bad); }
-    button.row {
-      display: grid; width: 100%;
-      grid-template-columns: 1.2rem 4.5rem 5rem 1fr auto auto;
-      gap: 0.6rem; align-items: center; text-align: left;
-      padding: 0.55rem 0.7rem; background: none; border: 0;
-      color: inherit; font: inherit; cursor: pointer;
-    }
-    button.row:hover { background: var(--chip); }
-    .chev { color: var(--muted); }
-    .id { font-family: var(--mono); font-weight: 600; }
-    .status {
-      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
-      padding: 0.12rem 0.4rem; border-radius: 999px;
-      background: var(--bad-bg); color: var(--bad); text-align: center;
-    }
-    .status.resolved { background: var(--ok-bg); color: var(--ok); }
-    .grouping { font-size: 0.82rem; color: var(--muted); }
-    .devices, .when { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); }
-    @media (max-width: 760px) {
-      button.row { grid-template-columns: 1.2rem 4.5rem 1fr; }
-      .status, .devices, .when { display: none; }
-    }
-  `],
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+        padding: 0.9rem 1.2rem;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.15rem;
+        letter-spacing: 0.12em;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .conn {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background: var(--warn);
+      }
+      .conn.up .dot {
+        background: var(--ok);
+      }
+      .host {
+        opacity: 0.7;
+      }
+      .error {
+        margin: 1rem 1.2rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 6px;
+        background: var(--bad-bg);
+        border: 1px solid var(--bad);
+        font-size: 0.85rem;
+      }
+      .error code {
+        font-family: var(--mono);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1.2rem;
+        max-width: 78rem;
+        margin: 0 auto;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+      }
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .card-head h2 {
+        margin-bottom: 0;
+      }
+      .section-note {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.72rem;
+      }
+      h2 {
+        margin: 0 0 0.7rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .count {
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .empty {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 0.6rem 0 0;
+      }
+      .empty code {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--accent);
+      }
+      ul.incidents {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.incidents > li {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        overflow: hidden;
+        background: var(--panel-2);
+      }
+      ul.incidents > li.open {
+        border-left: 3px solid var(--bad);
+      }
+      button.row {
+        display: grid;
+        width: 100%;
+        grid-template-columns: 1.2rem 4.5rem 5rem 1fr auto auto;
+        gap: 0.6rem;
+        align-items: center;
+        text-align: left;
+        padding: 0.55rem 0.7rem;
+        background: none;
+        border: 0;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.row:hover {
+        background: var(--chip);
+      }
+      .chev {
+        color: var(--muted);
+      }
+      .id {
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .status {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 0.12rem 0.4rem;
+        border-radius: 999px;
+        background: var(--bad-bg);
+        color: var(--bad);
+        text-align: center;
+      }
+      .status.resolved {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .grouping {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .devices,
+      .when {
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      @media (max-width: 760px) {
+        button.row {
+          grid-template-columns: 1.2rem 4.5rem 1fr;
+        }
+        .status,
+        .devices,
+        .when {
+          display: none;
+        }
+      }
+    `,
+  ],
 })
 export class AppComponent implements OnInit {
   readonly data = inject(DataService);
@@ -231,7 +380,8 @@ export class AppComponent implements OnInit {
    * lands on something worth reading rather than a list of collapsed rows.
    */
   private readonly autoExpand = computed(
-    () => this.data.openIncidents()[0]?.id ?? this.data.incidents()[0]?.id ?? null,
+    () =>
+      this.data.openIncidents()[0]?.id ?? this.data.incidents()[0]?.id ?? null,
   );
 
   ngOnInit(): void {
@@ -240,7 +390,9 @@ export class AppComponent implements OnInit {
 
   isExpanded(incident: Incident): boolean {
     const chosen = this.expanded();
-    return chosen === null ? this.autoExpand() === incident.id : chosen === incident.id;
+    return chosen === null
+      ? this.autoExpand() === incident.id
+      : chosen === incident.id;
   }
 
   toggle(incident: Incident): void {

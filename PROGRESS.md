@@ -1,6 +1,6 @@
 # ACN Progress
 
-Last updated: 2026-09-09
+Last updated: 2026-09-13
 
 ## ISP failure simulation update
 
@@ -27,8 +27,8 @@ with reachability observed independently.
 | **2**     | Raw logs + Layer 0 normalization              | **Complete — verified against a real link failure**    |
 | **3**     | Incident detection and correlation            | **Complete — both fault scenarios told apart**         |
 | **4**     | GPT-5.6 Luna read-only investigation agent    | **Complete — real two-scenario live-model e2e passed** |
-| 5         | Controlled network actions                    | Not started                                            |
-| 6         | Risk levels and approval workflow             | Not started                                            |
+| **5**     | Evidence-first GPT evaluation                 | **Complete — typed repair proposal included**          |
+| **6**     | Guarded remediation                           | **Implemented — live-lab acceptance pending**          |
 | 7         | Angular NOC UI                                | Read-only dashboard pulled forward; auth still to do   |
 | 8         | Historical intelligence                       | Not started                                            |
 | 9         | Advanced monitoring (SNMP, gNMI, BGP/OSPF)    | Not started                                            |
@@ -588,21 +588,32 @@ must retain a separate allow-listed action and approval boundary.
 
 ## Increment 6 — guarded AI remediation
 
-Started on `6-increment-6-guarded-ai-remediation`. The approved design is in
-`docs/increment-6-plan.md` and the first safety-contract slice is implemented:
+The complete five-adapter guarded-remediation slice is implemented. Completed `agentRuns` are
+projected into inert proposals by the Network Controller and revalidated in a
+Firestore transaction. Deterministic identities make replayed and concurrent
+submissions converge on one action and one proposal audit.
 
-- a separate Network Controller package owns the only future mutation boundary;
-- GPT-facing requests are limited to five fixed repair intents or explicit
-  escalation, with no caller-controlled target or command fields;
-- strict parsing rejects unknown fields, arbitrary commands, arbitrary targets,
-  invalid IDs and unbounded evidence lists;
-- deterministic idempotency prevents duplicate proposals from executing twice;
-- every mutation requires a human to choose Run;
-- the harness records before-state but does not algorithmically overrule GPT;
-- success requires observer recovery evidence, never only command exit zero;
-- ordered audit transitions cover proposed, approved, executing, verifying and
-  terminal states.
+A loopback-only API accepts exact approve/reject bodies. The browser has no
+Firestore write access. A named approval is durably recorded before one of five
+fixed adapters runs its code-owned, shell-free argv for its catalog target.
+Preflight rejects resolved incidents and mismatched target state; transport
+output is bounded in `networkChanges`. Success requires a fresh
+tool-specific observer evidence newer than execution plus the linked incident
+reaching `resolved`. Ambiguous `executing` actions found after restart
+are escalated without re-execution; `verifying` actions resume observation.
 
-The live device adapter, Firestore repository, human-run API, model proposal and
-dashboard approval card remain the next implementation slices. No live network
-mutation is connected yet.
+The dashboard shows proposal rationale, evidence, fixed target, risk,
+approval/rejection controls, action state, verified outcome and audit timeline.
+The one-command launcher starts the controller on `127.0.0.1:8788`.
+
+- 38 Network Controller tests pass (149 tests across the workspace), covering persistence concurrency,
+  transition/audit atomicity, strict HTTP validation, fixed argv, stale guards,
+  transport failure, independent recovery and duplicate approvals.
+- Network Controller typecheck/build and Angular production build pass. Angular
+  reports the initial bundle as 7.32 kB over its warning budget.
+- `scripts/e2e-guarded-remediation.sh` covers all five scenarios through the
+  no-model-charge live-lab acceptance path; it has not yet been claimed as
+  executed successfully.
+
+Still deferred: production RBAC, distributed controller leadership and
+automatic approval.

@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { InvestigableIncident } from '../models/types.js';
 
-/** One blind investigation per incident and prompt contract, independent of any baseline diagnosis. */
-export function diagnosisVersion(incidentId: string, promptVersion: string): string {
-  const canonical = JSON.stringify({ incidentId, promptVersion });
+/** One blind investigation per settled evidence generation and prompt contract. */
+export function diagnosisVersion(
+  incidentId: string,
+  investigationRevision: number,
+  promptVersion: string,
+): string {
+  const canonical = JSON.stringify({ incidentId, investigationRevision, promptVersion });
   return createHash('sha256').update(canonical).digest('hex');
 }
 

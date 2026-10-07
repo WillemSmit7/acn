@@ -30,8 +30,11 @@ npm run agent-service
 ```
 
 The Firestore emulator must already be running. The service performs one paid
-investigation per incident and prompt contract. Run identity does not depend on
-the deterministic root-cause mapper.
+investigation per settled evidence revision and prompt contract. It ignores
+legacy or unsettled incidents, transactionally verifies readiness while claiming,
+and reloads the incident and evidence before GPT is invoked. Duplicate callbacks
+and concurrent service instances converge on the same deterministic run id.
+Run identity does not depend on the deterministic root-cause mapper.
 
 If the key is missing, invalid, rate-limited or the API times out, the service
 records a failed `agentRuns/` document and continues watching. It never allows

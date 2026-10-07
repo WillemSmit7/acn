@@ -107,6 +107,12 @@ export interface Incident {
   /** networkEvents ids attached to this incident, in order. */
   eventIds: string[];
   eventCount: number;
+  /** True only after the latest fault evidence has been quiet for the settle window. */
+  investigationReady: boolean;
+  /** When the evidence generation currently offered to the agent became ready. */
+  settledAt: Date | null;
+  /** Monotonic identity for materially different, settled fault evidence. */
+  investigationRevision: number;
 }
 
 export function isFaultEvent(eventType: string): boolean {

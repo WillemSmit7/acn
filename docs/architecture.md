@@ -17,16 +17,16 @@ LAYER 0  (normalization)      <-- Increment 2 (built)
 INCIDENT DETECTION            <-- Increment 3 (built)
    |
    v
-AI AGENT                      <-- Increment 4 (read-only, built), 5 (actions)
+AI AGENT                      <-- Increment 4-5 (diagnosis + inert proposal)
    |
    v
-CONTROLLED NETWORK ACTIONS    <-- Increment 5, gated by risk policy in 6
+CONTROLLED NETWORK ACTIONS    <-- Increment 6 (five fixed adapters built)
    |
    v
 AUDIT + VERIFICATION
 ```
 
-## What exists today (Increments 1-4)
+## What exists today (Increments 1-6 vertical slice)
 
 ```
 +------------------------------------------------------------------+
@@ -48,7 +48,8 @@ AUDIT + VERIFICATION
 |  +--------------------------------------------------------+      |
 |  |         Firebase Emulator Suite - Firestore            |      |
 |  | devices/ healthChecks/ networkLogs/ networkEvents/     |      |
-|  | incidents/ agentRuns/ labActions/                      |      |
+|  | incidents/ agentRuns/ agentActions/ actionAuditEvents/ |      |
+|  | networkChanges/ labActions/                            |      |
 |  +---------------+--------------------------+-------------+      |
 |                  |  watches networkEvents   |  reads             |
 |                  v                          v                    |
@@ -63,6 +64,9 @@ AUDIT + VERIFICATION
 |  |  read-only -> agentRuns/ |  no network/action capability      |
 |  +--------------------------+                                     |
 |                                                                  |
+|  completed run -> Network Controller <- human approval (browser) |
+|                   fixed R2 eth2 adapter -> observer verification |
+|                                                                  |
 |  Browser --named action--> Lab Controller --fixed script--> Lab  |
 |             127.0.0.1 only; output -> labActions/                |
 +------------------------------------------------------------------+
@@ -75,15 +79,16 @@ events the routers logged at the same moment, which it can only do because both
 are in one stream on a common `deviceId`.
 
 The dashboard never writes Firestore. Every database write comes from a backend
-service using the Admin SDK. Its manual demo buttons call the separate local
-Lab Controller, not the Agent Service.
+service using the Admin SDK. Fault buttons call the Lab Controller; repair
+approval calls the separate loopback-only Network Controller.
 
 The Agent Service watches settled diagnoses, follows `eventIds` into
 `networkEvents/` and `sourceLogId` into the untouched `networkLogs/` text, then
 calls the OpenAI Responses API with `gpt-5.6-luna`. Its only write is the
 investigation record in `agentRuns/`. It owns no Docker, SSH, `vtysh`, network
-controller or remediation interface, so the Increment 4 read-only boundary is
-structural rather than merely a prompt instruction.
+controller or executable interface, so GPT cannot supply a command, target,
+path or argument. Its typed proposal is inert until the Network Controller
+revalidates the completed run and a human approval is durably recorded.
 
 The Lab Controller is deliberately outside that path. It binds to
 `127.0.0.1`, exposes only six named routes, maps them to repository-owned lab
@@ -202,7 +207,8 @@ matching recovery transition; ICMP health cannot close them.
 The NOC dashboard (`apps/web`) is pulled forward from Increment 7 deliberately:
 a correlation engine you cannot watch working is hard to trust. Its Firestore
 connection remains read-only; the only controls are local synthetic-lab
-scenarios routed through the narrow Lab Controller described above.
+scenarios routed through the narrow Lab Controller and guarded repair decisions
+routed through the separate Network Controller.
 
 It connects to the Firestore **emulator** with the ordinary Firebase JS SDK -
 same queries, same live `onSnapshot` listeners it would use against a real
@@ -211,10 +217,9 @@ about the UI changes when one arrives in Increment 10. The repo stays free of
 credentials and `./scripts/reset-firestore.sh` keeps working.
 
 The one thing that did have to change is `firebase/firestore.rules`, which
-denied all client access. Reads are now open for the seven collections the
-dashboard renders; writes stay denied everywhere, as do reads of the
-collections later increments add. That is safe only against a local emulator
-holding synthetic data — see the warning in the rules file.
+denied all client access. Reads are now open only for collections the dashboard
+renders; writes stay denied everywhere. That is safe only against a local
+emulator holding synthetic data — see the warning in the rules file.
 
 The Increment 5 view shows `collecting evidence` and `analyzing` stages live.
 GPT receives neutral observations and raw logs without the deterministic
@@ -230,9 +235,10 @@ duplicate telemetry into a second activity collection.
 
 ## Deferred deliberately
 
-No message bus, Neo4j, BigQuery, Cloud Functions, network action interface or
-risk-policy infrastructure exists yet. Each arrives only in the increment that
-needs it.
+No message bus, Neo4j, BigQuery, Cloud Functions, production RBAC or distributed
+controller leadership exists yet. The current adapter catalog remains fixed to
+the five reviewed lab repairs; arbitrary targets and multi-action plans remain
+out of scope.
 
 Layer 0 also has no incident concept: it emits events and stops there. Deciding
 that an `interface_down` on r2 and a `device_unreachable` for r3 and pc2 are one

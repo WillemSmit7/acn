@@ -1,3 +1,40 @@
-/* The dashboard owns its own palette inside the app-root host. */
-html, body { margin: 0; padding: 0; background: #0f1115; }
+/* Shared design tokens are inherited by the root component and its child views. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1115; --panel: #171a21; --panel-2: #1d2029; --chip: #272b36;
+  --line: #2a2e3a; --text: #e6e8ee; --muted: #8b93a7;
+  --ok: #48c78e; --ok-bg: #10281f; --bad: #f14668; --bad-bg: #2a141a;
+  --warn: #ffbf5f; --accent: #5aa9e6;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --scrollbar-track: var(--bg);
+  --scrollbar-thumb: #596276;
+  --scrollbar-thumb-hover: #737f98;
+  --scrollbar-thumb-active: var(--accent);
+}
+
+/* A light palette can override these semantic tokens without changing scrollbar rules. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --scrollbar-track: #edf0f5;
+  --scrollbar-thumb: #7a8498;
+  --scrollbar-thumb-hover: #5f6b82;
+  --scrollbar-thumb-active: #276f9f;
+}
+
+html, body { margin: 0; padding: 0; background: var(--bg); }
 * { box-sizing: border-box; }
+
+/* Opt in only the viewport and the three bounded application scroll regions. */
+.acn-scroll {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: auto;
+}
+.acn-scroll::-webkit-scrollbar { width: 0.875rem; height: 0.875rem; }
+.acn-scroll::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+.acn-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid var(--scrollbar-track);
+  border-radius: 999px;
+}
+.acn-scroll::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+.acn-scroll::-webkit-scrollbar-thumb:active { background: var(--scrollbar-thumb-active); }

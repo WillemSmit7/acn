@@ -48,6 +48,92 @@ test('one blind diagnosis is claimed once and scored only after model completion
   assert.equal(repository.failures.length, 0);
 });
 
+test('unsettled incidents do not claim or invoke an investigation', async () => {
+  const repository = new FakeRepository();
+  let invocations = 0;
+  const service = new AgentService(config, repository, {
+    investigate: async () => { invocations += 1; return modelResult(); },
+  }, quietLogger());
+
+  service.start();
+  repository.emit({ ...linkIncident, investigationReady: false });
+  await service.stop();
+
+  assert.equal(repository.claims.length, 0);
+  assert.equal(invocations, 0);
+});
+
+test('incident and evidence are reloaded after the run is claimed', async () => {
+  const repository = new FakeRepository();
+  const service = new AgentService(config, repository, {
+    investigate: async () => modelResult(),
+  }, quietLogger());
+  const staleCallback = { ...linkIncident, eventIds: linkIncident.eventIds.slice(0, 4) };
+
+  service.start();
+  repository.emit(staleCallback);
+  await service.stop();
+
+  assert.ok(repository.incidentLoads >= 2);
+  assert.deepEqual(repository.evidenceLoads[0], linkIncident.eventIds);
+});
+
+test('evidence that changes while loading is reloaded before GPT invocation', async () => {
+  const initial = { ...linkIncident, eventIds: linkIncident.eventIds.slice(0, 4) };
+  const repository = new FakeRepository(undefined, initial);
+  repository.afterFirstEvidenceLoad = () => repository.setCurrent(linkIncident);
+  const service = new AgentService(config, repository, {
+    investigate: async () => modelResult(),
+  }, quietLogger());
+
+  service.start();
+  repository.emit(initial);
+  await service.stop();
+
+  assert.equal(repository.evidenceLoads.length, 2);
+  assert.deepEqual(repository.evidenceLoads[1], linkIncident.eventIds);
+  assert.equal(repository.completions.length, 1);
+});
+
+test('a new fault generation supersedes a stale callback and receives its own run', async () => {
+  const repository = new FakeRepository();
+  const service = new AgentService(config, repository, {
+    investigate: async () => modelResult(),
+  }, quietLogger());
+  const next = {
+    ...linkIncident,
+    eventIds: [...linkIncident.eventIds, 'evt-repeat'],
+    investigationRevision: 2,
+    settledAt: '2026-08-25T19:16:18.000Z',
+  };
+
+  service.start();
+  repository.emit(linkIncident);
+  repository.setCurrent(next);
+  repository.emit(next);
+  await service.stop();
+
+  assert.equal(repository.claims.length, 1);
+  assert.equal(repository.claims[0]?.incident.investigationRevision, 2);
+  assert.equal(repository.completions.length, 1);
+});
+
+test('duplicate callbacks across concurrent service instances create one run', async () => {
+  const repository = new FakeRepository();
+  const client: InvestigatorClient = { investigate: async () => modelResult() };
+  const first = new AgentService(config, repository, client, quietLogger());
+  const second = new AgentService(config, repository, client, quietLogger());
+
+  first.start();
+  second.start();
+  repository.emit(linkIncident);
+  repository.emit(linkIncident);
+  await Promise.all([first.stop(), second.stop()]);
+
+  assert.equal(repository.claims.length, 1);
+  assert.equal(repository.completions.length, 1);
+});
+
 test('model failure is recorded and does not reject service shutdown', async () => {
   const repository = new FakeRepository();
   const client: InvestigatorClient = {
@@ -82,34 +168,53 @@ class FakeRepository implements AgentRepositoryPort {
   readonly analyzing: { runId: string; prompt: PromptRecord }[] = [];
   readonly completions: RunCompletion[] = [];
   readonly failures: { runId: string; error: unknown }[] = [];
-  private listener: ((incidents: InvestigableIncident[]) => void) | undefined;
+  readonly evidenceLoads: string[][] = [];
+  incidentLoads = 0;
+  afterFirstEvidenceLoad: (() => void) | undefined;
+  private readonly listeners = new Set<(incidents: InvestigableIncident[]) => void>();
   private readonly runIds = new Set<string>();
+  private current: InvestigableIncident;
 
   constructor(private readonly truth: {
     rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
     expectedRemediationTool: 'enable_interface';
-  } | null = {
+  } | null | undefined = {
     rootCauseType: 'interface_misconfiguration', rootCauseDevices: ['r2', 'r3'],
     expectedRemediationTool: 'enable_interface',
-  }) {}
+  }, current: InvestigableIncident = linkIncident) {
+    this.current = current;
+  }
 
   watchIncidents(onIncidents: (incidents: InvestigableIncident[]) => void): () => void {
-    this.listener = onIncidents;
-    return () => { this.listener = undefined; };
+    this.listeners.add(onIncidents);
+    return () => { this.listeners.delete(onIncidents); };
   }
 
   emit(incident: InvestigableIncident): void {
-    this.listener?.([incident]);
+    for (const listener of this.listeners) listener([incident]);
+  }
+
+  setCurrent(incident: InvestigableIncident): void {
+    this.current = incident;
+  }
+
+  async loadIncident(_incidentId: string): Promise<InvestigableIncident | null> {
+    this.incidentLoads += 1;
+    return this.current.investigationReady ? this.current : null;
   }
 
   async claimRun(claim: RunClaim): Promise<boolean> {
+    if (!this.current.investigationReady ||
+        this.current.investigationRevision !== claim.incident.investigationRevision) return false;
     if (this.runIds.has(claim.runId)) return false;
     this.runIds.add(claim.runId);
     this.claims.push(claim);
     return true;
   }
 
-  async loadEvidence(_eventIds: string[]): Promise<EvidenceBundle> {
+  async loadEvidence(eventIds: string[]): Promise<EvidenceBundle> {
+    this.evidenceLoads.push([...eventIds]);
+    if (this.evidenceLoads.length === 1) this.afterFirstEvidenceLoad?.();
     return linkEvidence;
   }
 
@@ -117,7 +222,7 @@ class FakeRepository implements AgentRepositoryPort {
     rootCauseType: 'interface_misconfiguration'; rootCauseDevices: string[];
     expectedRemediationTool: 'enable_interface';
   } | null> {
-    return this.truth;
+    return this.truth ?? null;
   }
 
   async markAnalyzing(runId: string, _evidence: EvidenceBundle, prompt: PromptRecord): Promise<void> {

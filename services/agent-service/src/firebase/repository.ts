@@ -46,12 +46,28 @@ export class AgentRepository implements AgentRepositoryPort {
     );
   }
 
+  async loadIncident(incidentId: string): Promise<InvestigableIncident | null> {
+    const snapshot = await this.db.collection(COLLECTIONS.incidents).doc(incidentId).get();
+    return snapshot.exists
+      ? toInvestigableIncident(snapshot.id, snapshot.data() ?? {})
+      : null;
+  }
+
   async claimRun(claim: RunClaim): Promise<boolean> {
     const ref = this.db.collection(COLLECTIONS.agentRuns).doc(claim.runId);
+    const incidentRef = this.db.collection(COLLECTIONS.incidents).doc(claim.incident.incidentId);
     const currentRef = this.db.collection(COLLECTIONS.labEvaluationState).doc('current');
     return this.db.runTransaction(async (transaction) => {
       const existing = await transaction.get(ref);
       if (existing.exists) return false;
+      const incidentSnapshot = await transaction.get(incidentRef);
+      const currentIncident = incidentSnapshot.exists
+        ? toInvestigableIncident(incidentSnapshot.id, incidentSnapshot.data() ?? {})
+        : null;
+      if (currentIncident === null ||
+          currentIncident.investigationRevision !== claim.incident.investigationRevision) {
+        return false;
+      }
       const current = await transaction.get(currentRef);
       const currentData = current.data();
       const candidateId = current.exists && currentData?.['status'] === 'pending' &&
@@ -75,6 +91,7 @@ export class AgentRepository implements AgentRepositoryPort {
         runId: claim.runId,
         incidentId: claim.incident.incidentId,
         diagnosisVersion: claim.diagnosisVersion,
+        investigationRevision: claim.incident.investigationRevision,
         incidentStatus: claim.incident.status,
         labEvaluationId: evaluationId,
         status: 'running',
@@ -216,7 +233,10 @@ export class AgentRepository implements AgentRepositoryPort {
 
 export function toInvestigableIncident(id: string, data: DocumentData): InvestigableIncident | null {
   const eventIds = stringArray(data['eventIds']);
-  if (eventIds.length === 0) return null;
+  const settledAt = timestamp(data['settledAt']);
+  const investigationRevision = data['investigationRevision'];
+  if (eventIds.length === 0 || data['investigationReady'] !== true || settledAt === null ||
+      !Number.isSafeInteger(investigationRevision) || investigationRevision < 1) return null;
   return {
     incidentId: typeof data['incidentId'] === 'string' ? data['incidentId'] : id,
     status: data['status'] === 'resolved' ? 'resolved' : 'open',
@@ -225,6 +245,9 @@ export function toInvestigableIncident(id: string, data: DocumentData): Investig
     symptoms: stringArray(data['symptoms']),
     affectedDevices: stringArray(data['affectedDevices']),
     eventIds,
+    investigationReady: true,
+    settledAt,
+    investigationRevision,
   };
 }
 

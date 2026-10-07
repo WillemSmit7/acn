@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --import tsx tests/*.test.ts"
   },
