@@ -72,8 +72,8 @@ import type { Incident } from './models';
         />
       </section>
 
-      <section class="card">
-        <div class="card-head">
+      <details class="card" open>
+        <summary class="card-head">
           <div>
             <h2>1 · Watcher observations</h2>
             <p class="section-note">
@@ -82,12 +82,12 @@ import type { Incident } from './models';
             </p>
           </div>
           <span class="count">{{ data.events().length }} most recent</span>
-        </div>
+        </summary>
         <acn-event-feed [events]="data.events()" />
-      </section>
+      </details>
 
-      <section class="card">
-        <div class="card-head">
+      <details class="card" open>
+        <summary class="card-head">
           <div>
             <h2>2 · Correlated cases</h2>
             <p class="section-note">
@@ -99,7 +99,7 @@ import type { Incident } from './models';
             {{ data.openIncidents().length }} open /
             {{ data.incidents().length }} total
           </span>
-        </div>
+        </summary>
 
         @if (data.incidents().length === 0) {
           <p class="empty">
@@ -140,10 +140,10 @@ import type { Incident } from './models';
             }
           </ul>
         }
-      </section>
+      </details>
 
-      <section class="card">
-        <div class="card-head">
+      <details class="card" open>
+        <summary class="card-head">
           <div>
             <h2>3 · GPT root-cause diagnosis</h2>
             <p class="section-note">
@@ -152,12 +152,12 @@ import type { Incident } from './models';
             </p>
           </div>
           <span class="count">{{ data.agentRuns().length }} recent run(s)</span>
-        </div>
+        </summary>
         <acn-agent-runs [runs]="data.agentRuns()" />
-      </section>
+      </details>
 
-      <section class="card">
-        <div class="card-head">
+      <details class="card" open>
+        <summary class="card-head">
           <div>
             <h2>4 · Human-authorized repair</h2>
             <p class="section-note">
@@ -167,13 +167,13 @@ import type { Incident } from './models';
             </p>
           </div>
           <span class="count">{{ data.agentActions().length }} action(s)</span>
-        </div>
+        </summary>
         <acn-remediation-actions
           [actions]="data.agentActions()"
           [audits]="data.actionAuditEvents()"
           [changes]="data.networkChanges()"
         />
-      </section>
+      </details>
     </main>
   `,
   styles: [
@@ -261,6 +261,39 @@ import type { Incident } from './models';
         display: flex;
         justify-content: space-between;
         align-items: baseline;
+        gap: 0.75rem;
+        cursor: pointer;
+        list-style: none;
+      }
+      .card-head::-webkit-details-marker {
+        display: none;
+      }
+      .card-head::before {
+        content: '\\25B6';
+        color: var(--muted);
+        font-size: 0.7rem;
+        flex: 0 0 0.75rem;
+      }
+      details[open] > .card-head::before {
+        content: '\\25BC';
+      }
+      .card-head > div {
+        flex: 1;
+        min-width: 0;
+      }
+      .card-head .count {
+        flex-shrink: 0;
+      }
+      .card-head:hover h2 {
+        color: var(--text);
+      }
+      .card-head:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 5px;
+        border-radius: 2px;
+      }
+      details:not([open]) .section-note {
+        display: none;
       }
       .card-head h2 {
         margin-bottom: 0;
@@ -356,6 +389,13 @@ import type { Incident } from './models';
         font-family: var(--mono);
       }
       @media (max-width: 760px) {
+        .card-head {
+          flex-wrap: wrap;
+        }
+        .card-head .count {
+          flex-basis: 100%;
+          padding-left: 1.5rem;
+        }
         button.row {
           grid-template-columns: 1.2rem 4.5rem 1fr;
         }
