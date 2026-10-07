@@ -273,9 +273,10 @@ import type { Incident } from './models';
         color: var(--muted);
         font-size: 0.7rem;
         flex: 0 0 0.75rem;
+        transition: transform 280ms ease;
       }
       details[open] > .card-head::before {
-        content: '\\25BC';
+        transform: rotate(90deg);
       }
       .card-head > div {
         flex: 1;
@@ -294,6 +295,47 @@ import type { Incident } from './models';
       }
       details:not([open]) .section-note {
         display: none;
+      }
+      /* Native disclosure semantics with intrinsic-height animation where supported. */
+      @supports (interpolate-size: allow-keywords) {
+        details.card {
+          interpolate-size: allow-keywords;
+        }
+        details.card::details-content {
+          block-size: 0;
+          overflow: clip;
+          opacity: 0;
+          transition:
+            block-size 280ms ease,
+            opacity 280ms ease,
+            content-visibility 280ms allow-discrete;
+        }
+        details.card[open]::details-content {
+          block-size: auto;
+          opacity: 1;
+        }
+        details.card .section-note {
+          block-size: auto;
+          overflow: clip;
+          opacity: 1;
+          transition:
+            block-size 280ms ease,
+            margin-top 280ms ease,
+            opacity 280ms ease;
+        }
+        details.card:not([open]) .section-note {
+          display: block;
+          block-size: 0;
+          margin-top: 0;
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        details.card::details-content,
+        details.card .section-note,
+        .card-head::before {
+          transition: none;
+        }
       }
       .card-head h2 {
         margin-bottom: 0;
