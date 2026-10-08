@@ -68,6 +68,128 @@ AUDIT + VERIFICATION
 +------------------------------------------------------------------+
 ```
 
+## System pipeline at a glance
+
+```mermaid
+flowchart LR
+  Network["Containerlab network<br/>PC1 - R1 - R2 - R3 - PC2"]
+
+  subgraph Collect["1. Collect"]
+    Health["Health Service<br/>ICMP reachability"]
+    LayerZero["Layer 0<br/>FRR logs + router-state probes"]
+  end
+
+  subgraph Evidence["2. Store evidence"]
+    Checks[("healthChecks/")]
+    Logs[("networkLogs/<br/>raw evidence")]
+    Events[("networkEvents/<br/>normalized events")]
+  end
+
+  subgraph Diagnose["3. Correlate and investigate"]
+    Incident["Incident Service<br/>deterministic diagnosis"]
+    Incidents[("incidents/")]
+    Agent["Agent Service<br/>read-only GPT investigation"]
+    Runs[("agentRuns/")]
+  end
+
+  Dashboard["4. Operator view<br/>read-only NOC dashboard"]
+
+  Network --> Health
+  Network --> LayerZero
+  Health --> Checks
+  Health -->|"reachability changes"| Events
+  LayerZero --> Logs
+  LayerZero -->|"recognized transitions"| Events
+  Logs -.->|"sourceLogId evidence"| Events
+  Events --> Incident --> Incidents
+  Incidents -->|"settled incidents"| Agent
+  Events -.->|"eventIds"| Agent
+  Logs -.->|"sourceLogId"| Agent
+  Agent --> Runs
+
+  Checks --> Dashboard
+  Logs --> Dashboard
+  Events --> Dashboard
+  Incidents --> Dashboard
+  Runs --> Dashboard
+
+  Browser["Operator's browser controls"]
+  Controller["Local Lab Controller<br/>fixed named actions"]
+  Actions[("labActions/")]
+  Browser --> Controller -->|"scenario scripts"| Network
+  Controller --> Actions --> Dashboard
+```
+
+The main data pipeline runs from the emulated network through independent
+collection, stored evidence, deterministic incident correlation, and
+read-only AI investigation. The dashboard reads the resulting data. Manual
+scenario controls form a separate operator-only lane: they inject fixed lab
+faults and do not connect the Agent Service to network actions.
+
+## Ingestion flow
+
+```mermaid
+flowchart TD
+  subgraph Network["Containerlab network"]
+    Routers["FRR routers<br/>daemon log files"]
+    State["Router state<br/>configuration, ospfd, CPU quota"]
+    Targets["Routers and hosts<br/>data-plane IPs"]
+  end
+
+  subgraph Collectors["Independent collectors"]
+    Tail["Layer 0 log tails"]
+    Parse["Parse FRR envelope<br/>then normalize with rules"]
+    Probe["Layer 0 state observer<br/>Docker probes"]
+    Buffer["Layer 0 buffer"]
+    Health["Health Service<br/>periodic ICMP checks"]
+    Tracker["Track reachability transitions"]
+  end
+
+  subgraph Store["Firestore"]
+    Devices[("devices/")]
+    Checks[("healthChecks/")]
+    Logs[("networkLogs/<br/>raw evidence")]
+    Events[("networkEvents/<br/>normalized transitions")]
+    Incidents[("incidents/")]
+    Runs[("agentRuns/")]
+  end
+
+  Correlator["Incident Service<br/>deterministic correlation"]
+  Investigator["Agent Service<br/>read-only investigation"]
+  Model["OpenAI Responses API"]
+  Dashboard["NOC dashboard<br/>read-only live view"]
+
+  Routers -->|"bind-mounted files"| Tail
+  Tail --> Parse --> Buffer
+  State --> Probe -->|"fault/recovery observations"| Buffer
+  Buffer -->|"every raw line and emitted state transition"| Logs
+  Buffer -->|"when a transition is recognized"| Events
+  Logs -.->|"sourceLogId links evidence"| Events
+
+  Targets --> Health --> Checks
+  Health --> Tracker -->|"only on state change"| Events
+  Health -.->|"sync on startup"| Devices
+
+  Events -->|"live event stream"| Correlator --> Incidents
+  Incidents -->|"settled incident"| Investigator
+  Events -.->|"eventIds"| Investigator
+  Logs -.->|"sourceLogId evidence"| Investigator
+  Investigator --> Model --> Investigator
+  Investigator --> Runs
+
+  Store --> Dashboard
+```
+
+Layer 0 keeps every raw log line and the observer's probe output for each
+emitted state transition, even when parsing or normalization yields no event.
+When it does emit an event, the evidence and event are committed together and
+linked by `sourceLogId`. The Health Service
+is an independent ingestion path: it stores every check in `healthChecks/`,
+but only writes to `networkEvents/` when reachability changes; those ICMP
+events have `sourceLogId: null`. Both event sources feed deterministic
+correlation. The Agent Service then investigates settled incidents with their
+event and raw-log evidence; it does not control the network.
+
 The Health Service and Layer 0 both write into `networkEvents/`, distinguished
 by `source`. That is what makes Increment 3 possible: the Incident Service
 correlates a device going unreachable (ICMP) with the interface and adjacency
