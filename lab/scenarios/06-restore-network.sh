@@ -16,23 +16,40 @@ ${DOCKER} exec clab-acn-r2 vtysh \
   -c 'router ospf' -c 'no passive-interface eth2'
 
 echo "==> Removing the r3 CPU limit before restoring its control plane"
+# Restore CPU capacity first; otherwise ospfd and watchfrr can remain starved
+# while cleanup tries to stop workers and bring the control plane back.
 ${DOCKER} update --cpu-quota -1 clab-acn-r3 >/dev/null
 
 echo "==> Removing r3 resource pressure and restoring ospfd"
 ${DOCKER} exec clab-acn-r3 sh -c '
   if [ -s /tmp/acn-resource-pids ]; then
-    while read -r pid; do kill "$pid" 2>/dev/null || true; done < /tmp/acn-resource-pids
+    while read -r pid; do
+      # A recorded PID may have exited and been reused; only kill our yes workers.
+      if [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" = yes ]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done < /tmp/acn-resource-pids
     rm -f /tmp/acn-resource-pids
   fi
   if pidof ospfd >/dev/null 2>&1; then
     kill -CONT $(pidof ospfd) 2>/dev/null || true
   else
     rm -f /var/run/frr/ospfd.pid /var/run/frr/ospfd.vty
-    /usr/lib/frr/watchfrr.sh start ospfd
   fi
   if [ -s /tmp/acn-watchfrr-stopped ]; then
     kill -CONT $(cat /tmp/acn-watchfrr-stopped) 2>/dev/null || true
     rm -f /tmp/acn-watchfrr-stopped
+  fi
+  # Let watchfrr repair ospfd itself first; restarting all FRR daemons here
+  # previously raced watchfrr and made Restore fail with exit 137.
+  for _ in $(seq 1 15); do
+    pidof ospfd >/dev/null 2>&1 && break
+    sleep 1
+  done
+  if ! pidof ospfd >/dev/null 2>&1; then
+    # Clear stale ospfd control files and start only the missing daemon, not all of FRR.
+    rm -f /var/run/frr/ospfd.pid /var/run/frr/ospfd.vty
+    /usr/lib/frr/watchfrr.sh start ospfd
   fi
   for _ in $(seq 1 20); do
     pidof ospfd >/dev/null 2>&1 && exit 0
@@ -69,7 +86,9 @@ fi
 echo "==> Waiting for R2, R3 and PC2 to become reachable"
 reachable=false
 stable_checks=0
-deadline=$((SECONDS + 45))
+# OSPF can converge just after the former 45s limit following daemon recovery;
+# require repeated successful probes so Restore reports success only when stable.
+deadline=$((SECONDS + 90))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
   if ${DOCKER} exec clab-acn-r3 vtysh -c 'show ip ospf neighbor' 2>/dev/null | grep -q 'Full/-' \
     && ping -c1 -W1 -n 10.255.0.2 >/dev/null 2>&1 \
@@ -88,7 +107,7 @@ while [ "${SECONDS}" -lt "${deadline}" ]; do
 done
 
 if [ "${reachable}" = false ]; then
-  echo "ERROR: R2, R3 and PC2 did not all become reachable after 45 seconds." >&2
+  echo "ERROR: R2, R3 and PC2 did not all become reachable after 90 seconds." >&2
   echo "       Check the lab with ./lab/verify.sh; use ./lab/deploy.sh --reconfigure if links are stale." >&2
   exit 1
 fi

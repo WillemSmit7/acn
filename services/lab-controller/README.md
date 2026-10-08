@@ -16,8 +16,11 @@ one action may run at a time, and status plus the last 100 output lines are
 written to `labActions/` for the live dashboard.
 
 Restore removes injected faults, then waits for R2, R3 and PC2 to become
-reachable. If containerlab interfaces or host routes are missing (for example
-after a host reboot), restore reports that explicitly; run
+reachable, allowing up to 90 seconds for OSPF convergence. Each controller
+scenario is also limited to 120 seconds; a timeout terminates its process
+group, records a failed action, and releases the controls. If containerlab
+interfaces or host routes are missing (for example after a host reboot),
+restore reports that explicitly; run
 `./lab/deploy.sh --reconfigure` from a terminal to recreate the lab links and
 routes.
 
