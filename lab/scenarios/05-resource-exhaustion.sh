@@ -9,17 +9,17 @@ resolve_docker || exit 2
 require_router r3
 
 echo "==> Constraining r3 CPU and starting bounded control-plane pressure"
-${DOCKER} update --cpus 0.10 clab-acn-r3 >/dev/null
+${DOCKER} update --cpu-period 100000 --cpu-quota 10000 clab-acn-r3 >/dev/null
 ${DOCKER} exec clab-acn-r3 sh -c '
   : > /tmp/acn-resource-pids
-  for _worker in 1 2 3 4; do
-    yes > /dev/null &
-    echo $! >> /tmp/acn-resource-pids
-  done
   watch=$(pidof watchfrr)
   kill -STOP "$watch"
   echo "$watch" > /tmp/acn-watchfrr-stopped
   kill -STOP $(pidof ospfd)
+  for _worker in 1 2 3 4; do
+    nice -n 19 yes > /dev/null &
+    echo $! >> /tmp/acn-resource-pids
+  done
 '
 
 echo "==> Fault injected; the autonomous observer will detect the quota and stopped service"
