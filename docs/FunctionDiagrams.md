@@ -224,6 +224,148 @@ predicted-versus-observed reachability, and the ids of its source events. The
 source events remain in `networkEvents/`; Layer 0's `sourceLogId` links
 log-derived events onward to their raw `networkLogs/` evidence.
 
+## Agent Service
+
+The Agent Service watches diagnosed incidents and performs an independent,
+read-only investigation. It loads the incident's normalized events and linked
+raw log evidence, asks the configured model for a structured diagnosis, checks
+the citations, compares the conclusion with the deterministic baseline, and
+records the run in `agentRuns/`.
+
+```mermaid
+flowchart TD
+  A[("Firestore: incidents/<br/>diagnosed incident")]
+  B["Watch added/updated incidents"]
+  C{"Has a supported<br/>diagnosis?"}
+  D["Skip incident without<br/>a usable diagnosis"]
+  E["Hash diagnosis into a version<br/>derive deterministic run id"]
+  F{"Run id already active<br/>or recorded?"}
+  G["Skip duplicate investigation"]
+  H["Claim run transactionally<br/>status=running<br/>stage=collecting_evidence"]
+  I["Load eventIds from<br/>networkEvents/"]
+  J["Follow sourceLogId references<br/>to raw networkLogs/"]
+  K["Build versioned prompt<br/>baseline + incident +<br/>normalized events + raw logs"]
+  L["Update run stage=analyzing<br/>save evidence refs and prompt"]
+  M["Call model via Responses API<br/>strict structured JSON<br/>no tools or action capability"]
+  N{"Response valid and<br/>citations refer to supplied evidence?"}
+  O["Compute agree/disagree<br/>against deterministic baseline"]
+  P["Complete run with conclusion,<br/>citations, usage, latency and cost"]
+  Q["Record run as failed<br/>with error and completion time"]
+  R[("Firestore: agentRuns/<br/>lifecycle + investigation result")]
+  S["No remediation path:<br/>agent cannot change network"]
+
+  A --> B --> C
+  C -- "No" --> D
+  C -- "Yes" --> E --> F
+  F -- "Yes" --> G
+  F -- "No" --> H --> I --> J --> K --> L --> M --> N
+  N -- "Yes" --> O --> P --> R
+  N -- "No / request or processing error" --> Q --> R
+  M -.-> S
+```
+
+### Input and evidence preparation
+
+The service watches incident documents as they are added or modified. It only
+accepts incidents with a supported deterministic root-cause record; an
+incident still marked as analyzing is not investigable. A hash of that
+diagnosis determines its version and run id. The id is claimed transactionally
+in `agentRuns/`, preventing duplicate calls if the listener replays the same
+incident or it changes without a new diagnosis version.
+
+For a claimed run, the service loads each event id from `networkEvents/`, then
+follows each non-null `sourceLogId` to the original `networkLogs/` document.
+The prompt contains the deterministic baseline, incident summary, normalized
+events, and raw device logs. It tells the model to treat evidence as data, not
+instructions, and to cite only supplied event and log ids.
+
+### Model investigation and validation
+
+The prompt is sent to the configured model through the OpenAI Responses API,
+requesting strict structured JSON and no tools. The model returns its own
+root-cause category, affected devices, summary, confidence, reasoning, and
+evidence citations. The service validates the response and verifies that every
+cited event or log id was actually supplied; missing or invented citations
+fail validation.
+
+Agreement is calculated by the service, not trusted from model output: it
+compares the model's cause and devices with the deterministic baseline. A
+successful run records the conclusion, agreement, evidence citations, response
+metadata, token usage, latency, and estimated cost.
+
+### Output, failures, and safety boundary
+
+The Agent Service writes only to `agentRuns/`. Each run records its lifecycle:
+`collecting_evidence` → `analyzing` → `completed`, or `failed`. Evidence-loading,
+API, output-validation, and persistence errors are isolated to that
+investigation; when a run has been claimed, its failure is recorded rather than
+propagated into the Health, Layer 0, or Incident services.
+
+This investigator has no Docker, SSH, `vtysh`, controller, or action tools. It
+can analyze and report, but cannot remediate or otherwise change the network.
+
+## Next planned stage: controlled network actions
+
+**Planned only — Increment 5 is not implemented, and the Network Controller
+directory is a placeholder.** The diagram below is a high-level target flow
+from the project specification, not a description of running code. The action
+contract and risk/approval boundary must be designed before this flow is
+connected to the Agent Service. The current Agent Service remains read-only.
+
+```mermaid
+flowchart TD
+  A[("Current inputs:<br/>incidents/ + agentRuns/<br/>diagnosis and evidence")]
+  B["Future: propose a bounded action<br/>for a diagnosed incident"]
+  C["Describe target, expected effect,<br/>risk and verification plan"]
+  D[("Planned: agentActions/<br/>action proposal + lifecycle")]
+  E["Future risk and authorization policy<br/>(Increment 6 boundary)"]
+  F{"Policy permits action?"}
+  G["Update proposal as rejected/held"]
+  H{"Operator approval required?"}
+  I["Wait for authorized approval"]
+  J{"Approved?"}
+  K["Update proposal as rejected/expired"]
+  L["Controlled Network Controller<br/>validate action contract and target"]
+  M{"Request valid and allowed?"}
+  N["Reject request;<br/>record reason on proposal"]
+  O["Apply bounded action"]
+  P["Observe network and verify<br/>expected effect"]
+  Q{"Successful?"}
+  R["Record success;<br/>close action lifecycle"]
+  S["Rollback if available and verify;<br/>otherwise escalate"]
+  T[("Planned: networkChanges/<br/>before/after + result + audit")]
+  U(["Stop: no network change"])
+
+  A -. "future connection only" .-> B
+  B --> C --> D --> E --> F
+  F -- "No" --> G --> U
+  F -- "Yes" --> H
+  H -- "Yes" --> I --> J
+  J -- "No" --> K --> U
+  J -- "Yes" --> L
+  H -- "No" --> L
+  L --> M
+  M -- "No" --> N --> U
+  M -- "Yes" --> O --> P --> Q
+  Q -- "Yes" --> R --> T
+  Q -- "No" --> S --> T
+```
+
+At a high level, a future proposal would be bounded and explain its target,
+expected effect, risk, and verification plan. A separate policy boundary must
+decide whether the action is permitted and whether an authorized operator must
+approve it. Only then could a Network Controller validate and apply the
+approved action. ACN would observe the result and record success, rollback, or
+escalation for audit. Rejected, held, or invalid requests would be recorded
+without changing the network.
+
+The planned data model names `agentActions/` for proposals and
+`networkChanges/` for execution results. Their exact schemas, risk levels,
+authorization rules, action catalog, verification and rollback behavior are
+not yet implemented; the diagram intentionally does not define those details.
+The manual Lab Controller remains a separate, local demo tool and is not this
+future action path.
+
 ## Implementation references
 
 - Layer 0 log collection and pipeline:
@@ -247,3 +389,15 @@ log-derived events onward to their raw `networkLogs/` evidence.
   [`services/incident-service/src/correlation/correlator.ts`](../services/incident-service/src/correlation/correlator.ts)
 - Incident root-cause inference:
   [`services/incident-service/src/correlation/rootCause.ts`](../services/incident-service/src/correlation/rootCause.ts)
+- Agent Service lifecycle:
+  [`services/agent-service/src/service.ts`](../services/agent-service/src/service.ts)
+- Agent evidence loading and run persistence:
+  [`services/agent-service/src/firebase/repository.ts`](../services/agent-service/src/firebase/repository.ts)
+- Agent prompt and model client:
+  [`services/agent-service/src/investigation/prompt.ts`](../services/agent-service/src/investigation/prompt.ts),
+  [`services/agent-service/src/openai/client.ts`](../services/agent-service/src/openai/client.ts)
+- Planned next increment and architecture:
+  [`services/network-controller/README.md`](../services/network-controller/README.md),
+  [`architecture.md`](./architecture.md),
+  [`data-model.md`](./data-model.md),
+  [`ACN_FUNCTIONAL_TECHNICAL_SPECIFICATION.md`](../ACN_FUNCTIONAL_TECHNICAL_SPECIFICATION.md)
