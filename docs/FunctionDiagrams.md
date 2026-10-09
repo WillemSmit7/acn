@@ -3,6 +3,31 @@
 This document collects flow diagrams for specific ACN logic units. The diagrams
 show each unit's inputs, transformations, decisions, and outputs.
 
+## Services and responsibilities
+
+This table describes the components that make up the current runnable system.
+“Purpose” is the plain-language reason an operator or user would care about
+each component.
+
+| Service or component | State | Active duties and responsibilities | Purpose in the system |
+| --- | --- | --- | --- |
+| Containerlab + FRR network | Running lab infrastructure | Runs the simulated PC1—R1—R2—R3—PC2 network; FRR provides routing and emits router logs. | A safe, repeatable network to monitor and use for fault demonstrations. |
+| Health Service | Implemented backend service | Pings configured data-plane addresses, stores each check in `healthChecks/`, and emits `device_unreachable` / `device_recovered` events on reachability changes. | Answers “which devices can I reach, and when did that change?” |
+| Layer 0 | Implemented backend service | Tails FRR logs and probes selected router state; preserves raw evidence in `networkLogs/` and writes recognized fault/recovery transitions to `networkEvents/`. | Turns router messages and state observations into traceable, normalized evidence. |
+| Firestore Emulator | Local data store | Stores devices, health checks, raw logs, normalized events, incidents, agent runs, and lab actions; backend services write through the Admin SDK while the dashboard reads through the Firebase SDK. | The shared, live record of what the system observed and concluded. |
+| Incident Service | Implemented backend service | Consumes `networkEvents/`, correlates related symptoms, waits for evidence to settle, determines a reproducible root cause, tracks recovery, and writes `incidents/`. | Turns individual signals into an understandable incident with a diagnosis. |
+| Agent Service | Implemented, read-only backend service | Reads diagnosed incidents and linked event/log evidence, requests an independent structured investigation, validates citations, compares conclusions with the baseline, and writes lifecycle/results to `agentRuns/`. | Provides a second opinion with evidence and an auditable record; it cannot change the network. |
+| OpenAI Responses API (GPT-5.6 Luna) | External dependency used by Agent Service | Receives the investigation prompt and supplied evidence, then returns a structured conclusion; no tools or action capability are provided. | Supplies the AI investigation, while ACN retains control of evidence, validation, and recording. |
+| Angular NOC dashboard | Implemented operator-facing web app | Subscribes to recent Firestore data, renders topology, timeline, incidents, evidence, events and agent runs, and reports listener errors. All Firestore access from the browser is read-only. | Lets an operator see the end-to-end pipeline and inspect why ACN reached a conclusion. |
+| Lab Controller | Implemented localhost-only control service | Accepts only named scenario IDs, maps them to repository-owned scripts, allows one action at a time, and records status/output in `labActions/`. | Provides fixed manual fault-injection and restore controls for the synthetic lab without granting the AI action authority. |
+| Lab scenario scripts | Implemented fixed action targets | Apply one of five named lab fault scenarios or restore the lab; scripts do not act as an open-ended command interface. | Make demonstrations repeatable and constrain what the manual controls can change. |
+| `start-all.sh` launcher | Optional operational helper | Builds/verifies the stack, starts the selected local processes, records logs, and owns cleanup of the processes it starts. | Starts and stops the local demo as one managed stack; it does not process network data itself. |
+
+The future general Network Controller, risk/approval workflow, user
+authentication, historical intelligence, and advanced monitoring integrations
+are not current active services. They are intentionally excluded from the table
+of implemented responsibilities.
+
 ## Layer 0
 
 Layer 0 has two independent inputs: FRR daemon log files and periodic router
@@ -304,6 +329,79 @@ propagated into the Health, Layer 0, or Incident services.
 This investigator has no Docker, SSH, `vtysh`, controller, or action tools. It
 can analyze and report, but cannot remediate or otherwise change the network.
 
+## Angular dashboard
+
+The Angular NOC dashboard is a live viewer for the implemented pipeline plus
+manual controls for the synthetic lab. Its Firestore path is read-only; manual
+actions go through a separate localhost-only Lab Controller and are not exposed
+to the Agent Service.
+
+```mermaid
+flowchart TD
+  subgraph READ["A. Live, read-only dashboard data"]
+    A[("Firestore emulator<br/>devices, healthChecks,<br/>networkLogs, networkEvents,<br/>incidents, agentRuns, labActions")]
+    B["Seven onSnapshot listeners<br/>bounded recent slices for collection histories"]
+    C["Map Firestore documents<br/>to dashboard models and dates"]
+    D["Store live collections<br/>in Angular signals"]
+    E["Derive latest check per device<br/>and open-incident count"]
+    F["Network strip<br/>physical order + latest ICMP status"]
+    G["Operations timeline<br/>merge sources, sort newest first,<br/>filter and cap at 250 entries"]
+    H["Investigator and incident views<br/>diagnosis, lifecycle, prediction,<br/>events and linked raw logs"]
+    I["Normalized event feed<br/>ICMP or Layer 0 source"]
+    J["Firestore listener error<br/>shows error and unavailable status"]
+    A --> B --> C --> D
+    D --> E --> F
+    D --> G
+    D --> H
+    D --> I
+    B -. "snapshot error" .-> J
+  end
+
+  subgraph CONTROL["B. Manual lab controls — separate from the AI agent"]
+    L["Operator selects one of<br/>five named fault scenarios or restore"]
+    M{"Fault injection?"}
+    N["Confirm before running<br/>a fault scenario"]
+    O["Send only the scenario id<br/>POST 127.0.0.1:8787/api/actions/{id}"]
+    P["Lab Controller validates the named route<br/>and runs its fixed repository script"]
+    Q["Poll controller status<br/>GET /api/status every 2 seconds"]
+    R[("Firestore: labActions/<br/>controller output and lifecycle")]
+    S["Surface controller status,<br/>errors and latest action"]
+    L --> M
+    M -- "Yes" --> N --> O
+    M -- "Restore" --> O
+    O --> P
+    P --> R
+    P --> Q --> S
+  end
+
+  R -. "read-only snapshot listener" .-> B
+  R -. "action history" .-> G
+```
+
+The data service subscribes to `devices/`, plus recent ordered slices of
+`healthChecks/` (200), `networkEvents/` (200), `incidents/` (50),
+`agentRuns/` (50), `labActions/` (50), and `networkLogs/` (300). It maps
+documents into typed view models; the topology uses each device's latest
+health check, and incident details join in-window events to raw logs by
+`sourceLogId`. Older records outside a bounded slice may not appear in the
+timeline or an incident's evidence view.
+
+The operations timeline combines health checks, events, raw logs, incident
+updates, agent runs, and lab actions, orders them newest first, and supports
+all, problem, AI, and raw-log filters. The other panels show the topology,
+agent conclusions, incident diagnosis and evidence, and normalized event feed.
+
+For controls, fault scenarios require operator confirmation; restore starts
+directly. Requests contain a scenario id only—not a command, device, interface,
+or script path. The controller exposes fixed named actions on localhost,
+rejects concurrent actions, and records output and lifecycle in `labActions/`.
+The browser reads that record like other dashboard data; it does not write
+Firestore. The controller is a manual demo boundary, not the future general
+Network Controller, and it gives the investigator no action capability.
+Firestore reads are open only for the local synthetic-data emulator; the
+current rules must not be deployed to a real project before authentication and
+per-user authorization exist.
+
 ## Next planned stage: controlled network actions
 
 **Planned only — Increment 5 is not implemented, and the Network Controller
@@ -396,6 +494,11 @@ future action path.
 - Agent prompt and model client:
   [`services/agent-service/src/investigation/prompt.ts`](../services/agent-service/src/investigation/prompt.ts),
   [`services/agent-service/src/openai/client.ts`](../services/agent-service/src/openai/client.ts)
+- Angular dashboard data and manual lab controls:
+  [`apps/web/src/app/data.service.ts`](../apps/web/src/app/data.service.ts),
+  [`apps/web/src/app/components/operations-console.component.ts`](../apps/web/src/app/components/operations-console.component.ts),
+  [`apps/web/src/app/lab-control.service.ts`](../apps/web/src/app/lab-control.service.ts),
+  [`apps/web/src/app/components/topology-strip.component.ts`](../apps/web/src/app/components/topology-strip.component.ts)
 - Planned next increment and architecture:
   [`services/network-controller/README.md`](../services/network-controller/README.md),
   [`architecture.md`](./architecture.md),
