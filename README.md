@@ -383,5 +383,6 @@ acn/
 - [PROGRESS.md](PROGRESS.md) — what is done, what is next
 - [docs/architecture.md](docs/architecture.md) — layering and key design decisions
 - [docs/data-pipeline.md](docs/data-pipeline.md) — how data moves from source to serving
+- [docs/FunctionDiagrams.md](docs/FunctionDiagrams.md) — flow diagrams for collector logic
 - [docs/data-model.md](docs/data-model.md) — Firestore collections
 - [docs/incident-model.md](docs/incident-model.md) — correlation and root-cause rules
