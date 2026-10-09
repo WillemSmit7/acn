@@ -71,7 +71,11 @@ export class LabActionService {
         this.log(`${action.id} COMPLETE ${action.label}`);
       } else {
         action.status = 'failed';
-        action.error = `Scenario exited with code ${exitCode}`;
+        // 124 is the runner's timeout marker; recording it distinctly explains
+        // why the scenario failed while still allowing the busy state to clear.
+        action.error = exitCode === 124
+          ? 'Scenario timed out; the controller stopped it to release the lab controls'
+          : `Scenario exited with code ${exitCode}`;
         this.log(`${action.id} FAILED ${action.error}`);
       }
     } catch (error) {

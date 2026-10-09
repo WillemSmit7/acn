@@ -15,21 +15,102 @@ ${DOCKER} exec clab-acn-r2 vtysh \
   -c 'interface eth2' -c 'no shutdown' -c 'no ip ospf cost' \
   -c 'router ospf' -c 'no passive-interface eth2'
 
+echo "==> Removing the r3 CPU limit before restoring its control plane"
+# Restore CPU capacity first; otherwise ospfd and watchfrr can remain starved
+# while cleanup tries to stop workers and bring the control plane back.
+${DOCKER} update --cpu-quota -1 clab-acn-r3 >/dev/null
+
 echo "==> Removing r3 resource pressure and restoring ospfd"
 ${DOCKER} exec clab-acn-r3 sh -c '
   if [ -s /tmp/acn-resource-pids ]; then
-    while read -r pid; do kill "$pid" 2>/dev/null || true; done < /tmp/acn-resource-pids
+    while read -r pid; do
+      # A recorded PID may have exited and been reused; only kill our yes workers.
+      if [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" = yes ]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done < /tmp/acn-resource-pids
     rm -f /tmp/acn-resource-pids
   fi
-  if pidof ospfd >/dev/null 2>&1; then kill -CONT $(pidof ospfd) 2>/dev/null || true; fi
+  if pidof ospfd >/dev/null 2>&1; then
+    kill -CONT $(pidof ospfd) 2>/dev/null || true
+  else
+    rm -f /var/run/frr/ospfd.pid /var/run/frr/ospfd.vty
+  fi
   if [ -s /tmp/acn-watchfrr-stopped ]; then
     kill -CONT $(cat /tmp/acn-watchfrr-stopped) 2>/dev/null || true
     rm -f /tmp/acn-watchfrr-stopped
   fi
-  sleep 2
-  if ! pidof ospfd >/dev/null 2>&1; then /usr/lib/frr/frrinit.sh restart; fi
+  # Let watchfrr repair ospfd itself first; restarting all FRR daemons here
+  # previously raced watchfrr and made Restore fail with exit 137.
+  for _ in $(seq 1 15); do
+    pidof ospfd >/dev/null 2>&1 && break
+    sleep 1
+  done
+  if ! pidof ospfd >/dev/null 2>&1; then
+    # Clear stale ospfd control files and start only the missing daemon, not all of FRR.
+    rm -f /var/run/frr/ospfd.pid /var/run/frr/ospfd.vty
+    /usr/lib/frr/watchfrr.sh start ospfd
+  fi
+  for _ in $(seq 1 20); do
+    pidof ospfd >/dev/null 2>&1 && exit 0
+    sleep 1
+  done
+  echo "ERROR: ospfd did not restart after resuming watchfrr" >&2
+  exit 1
 '
-${DOCKER} update --cpus 0 clab-acn-r3 >/dev/null
 
-echo "==> Baseline restored; the autonomous observer will emit recovery transitions"
-echo "==> Allow OSPF one dead interval to reconverge"
+missing_interfaces=()
+for endpoint in r1:eth2 r2:eth1 r2:eth2 r3:eth1 r3:eth2 pc2:eth1; do
+  node="${endpoint%%:*}"
+  interface="${endpoint#*:}"
+  if ! ${DOCKER} exec "clab-acn-${node}" ip link show "${interface}" >/dev/null 2>&1; then
+    missing_interfaces+=("${node}:${interface}")
+  fi
+done
+
+if [ "${#missing_interfaces[@]}" -gt 0 ]; then
+  echo "ERROR: containerlab data-plane interfaces are missing: ${missing_interfaces[*]}" >&2
+  echo "       From a terminal, run ./lab/deploy.sh --reconfigure to recreate them." >&2
+  exit 1
+fi
+
+missing_routes=()
+ip route show 10.255.0.0/24 | grep -q 'via 172.20.20.11' || missing_routes+=("10.255.0.0/24")
+ip route show 10.0.0.0/16 | grep -q 'via 172.20.20.11' || missing_routes+=("10.0.0.0/16")
+if [ "${#missing_routes[@]}" -gt 0 ]; then
+  echo "ERROR: host routes into the lab are missing or incorrect: ${missing_routes[*]}" >&2
+  echo "       From a terminal, run ./lab/deploy.sh --reconfigure to restore the routes." >&2
+  exit 1
+fi
+
+echo "==> Waiting for R2, R3 and PC2 to become reachable"
+reachable=false
+stable_checks=0
+# OSPF can converge just after the former 45s limit following daemon recovery;
+# require repeated successful probes so Restore reports success only when stable.
+deadline=$((SECONDS + 90))
+while [ "${SECONDS}" -lt "${deadline}" ]; do
+  if ${DOCKER} exec clab-acn-r3 vtysh -c 'show ip ospf neighbor' 2>/dev/null | grep -q 'Full/-' \
+    && ping -c1 -W1 -n 10.255.0.2 >/dev/null 2>&1 \
+    && ping -c1 -W1 -n 10.255.0.3 >/dev/null 2>&1 \
+    && ping -c1 -W1 -n 10.0.3.2 >/dev/null 2>&1; then
+    stable_checks=$((stable_checks + 1))
+    if [ "${stable_checks}" -ge 3 ]; then
+      reachable=true
+      break
+    fi
+    sleep 5
+  else
+    stable_checks=0
+    sleep 1
+  fi
+done
+
+if [ "${reachable}" = false ]; then
+  echo "ERROR: R2, R3 and PC2 did not all become reachable after 90 seconds." >&2
+  echo "       Check the lab with ./lab/verify.sh; use ./lab/deploy.sh --reconfigure if links are stale." >&2
+  exit 1
+fi
+
+echo "==> Baseline restored; R2, R3 and PC2 are reachable"
+echo "==> The autonomous observer will emit recovery transitions"
