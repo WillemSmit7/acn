@@ -310,6 +310,36 @@ dashboard and use **Manual fault controls**. The **Live operations timeline**
 merges health checks, raw FRR lines, normalized events, incident correlation,
 controller output and Luna's current/final comment in timestamp order.
 
+### Diagnosis confidence and incident PDFs
+
+The investigation panel shows the suspected cause, qualitative confidence
+(high, medium or low), reasoning and supporting evidence. Confidence is the
+model's assessment of the supplied evidence, not a verified probability.
+Expand cited events and logs to inspect their IDs, UTC timestamps, sources,
+metric attributes and original output. Evidence is fetched by document ID,
+including records outside the dashboard's recent window. Missing records or
+read failures are shown explicitly. Hidden lab scoring remains an internal
+test mechanism and is not presented as diagnosis confidence.
+
+Once the latest investigation finishes successfully, expand its incident and
+select **Download incident PDF** to export a report with
+a plain-language summary, diagnosis and confidence, timeline, measured elapsed
+times, approval/rejection history, action status and cited evidence. The summary
+reuses the completed investigation's generated summary; export makes no new
+model call. New investigations use the manager-friendly summary prompt, while
+older investigations retain their original text. Download is disabled when
+there is no completed summary or a newer investigation is pending or failed;
+the export service also checks eligibility before generating a PDF. Reports
+use a styled cover header, timing cards, a readable timeline and a separate
+evidence appendix.
+
+PDFs use a fresh read of the incident and related records, with explicit notices
+for missing evidence or history limits. All timestamps are UTC. Unavailable
+timings are marked rather than estimated; unresolved cases are not reported as
+recovered. Operator names are recorded values, not authenticated identities.
+The renderer and embedded fonts load locally; incident data is not sent to a
+PDF service. Run `npm run test:incident-report` for report and pagination checks.
+
 ---
 
 ## The topology

@@ -368,7 +368,7 @@ function buildEntries(
     id: `agent-${run.id}-${run.stage}`, at: run.completedAt ?? run.startedAt, source: 'luna',
     title: run.status === 'completed' ? `AI: ${run.conclusion?.summary ?? 'investigation complete'}`
       : run.status === 'failed' ? 'AI investigation failed' : `AI ${run.stage.replace('_', ' ')}`,
-    detail: run.status === 'completed' ? `${run.agreement ?? 'uncompared'} · ${run.totalTokens} tokens · ${run.latencyMs ?? 0} ms`
+    detail: run.status === 'completed' ? `${run.conclusion?.confidence ?? 'unavailable'} confidence (model assessment) · ${run.citedEventIds.length} cited events, ${run.citedLogIds.length} cited logs · ${run.totalTokens} tokens · ${run.latencyMs ?? 0} ms`
       : run.error ?? `${run.evidenceEventIds.length} events, ${run.evidenceLogIds.length} logs`,
     tone: run.status === 'failed' ? 'bad' : 'ai', problem: run.status === 'failed',
   });

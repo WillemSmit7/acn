@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrompt } from '../src/investigation/prompt.js';
+import { buildPrompt, PROMPT_VERSION } from '../src/investigation/prompt.js';
 import { diagnosisVersion, runIdFor } from '../src/investigation/version.js';
 import { evaluate, validateCitations } from '../src/service.js';
 import { agreeingConclusion, linkEvidence, linkIncident } from './fixtures.js';
@@ -56,6 +56,38 @@ test('prompt still requires explicit interface-down or administrative-state evid
   const prompt = buildPrompt(linkIncident, linkEvidence);
   assert.match(prompt.developer, /interface-down event or explicit admin-state observation is required/i);
   assert.match(prompt.developer, /escalate_no_safe_action when evidence is insufficient/i);
+});
+
+test('prompt defines confidence using corroboration, alternatives and evidence gaps', () => {
+  const prompt = buildPrompt(linkIncident, linkEvidence);
+  assert.equal(prompt.version, 'gpt-investigator-v4-evidence-confidence');
+  assert.equal(prompt.version, PROMPT_VERSION);
+  assert.match(prompt.developer, /high confidence only when direct evidence.*independent observations/);
+  assert.match(prompt.developer, /raw log it was derived from are one observation/);
+  assert.match(prompt.developer, /medium confidence.*corroboration is incomplete/);
+  assert.match(prompt.developer, /low confidence.*sparse, indirect, conflicting/);
+  assert.match(prompt.developer, /not a calibrated probability/);
+  assert.match(prompt.developer, /reasoning.*IDs, timestamps and sources/);
+  assert.match(prompt.developer, /gaps, contradictions and plausible alternative explanations/);
+  // Confidence instructions must not expose the hidden lab answer to the model.
+  const input = JSON.parse(prompt.input) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(input), [
+    'task', 'guardedRepairIntents', 'incident', 'neutralObservations', 'rawDeviceLogs',
+  ]);
+  assert.deepEqual(input['incident'], {
+    incidentId: linkIncident.incidentId,
+    status: linkIncident.status,
+    severity: linkIncident.severity,
+    affectedDevices: linkIncident.affectedDevices,
+  });
+});
+
+test('prompt requests a manager summary without unsupported outcomes or benefit claims', () => {
+  const prompt = buildPrompt(linkIncident, linkEvidence);
+  assert.match(prompt.developer, /summary as a short plain-language incident summary for a manager/);
+  assert.match(prompt.developer, /preserving uncertainty/);
+  assert.match(prompt.developer, /Do not invent recovery, approval, elapsed time, business impact or time saved/);
+  assert.match(prompt.developer, /proposed repair is not an executed repair/);
 });
 
 test('post-response evaluation scores type and device set independently', () => {

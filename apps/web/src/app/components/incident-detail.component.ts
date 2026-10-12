@@ -1,5 +1,6 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { DataService } from '../data.service';
+import { IncidentReportService } from '../incident-report.service';
 import type { Incident, NetworkEvent } from '../models';
 
 /** One grouped case: its scope, grouping rule, and exact watcher evidence. */
@@ -9,6 +10,15 @@ import type { Incident, NetworkEvent } from '../models';
   template: `
     @let inc = incident();
     <div class="detail">
+      <button class="report-download" type="button" [disabled]="exporting() || !reportReady()" (click)="downloadReport()">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4" />
+        </svg>
+        {{ exporting() ? 'Preparing PDF…' : 'Download incident PDF' }}
+      </button>
+      <p class="note">{{ reportReady() ? 'Summary, timeline, measured timings, decisions and cited evidence.' : 'PDF available after the latest investigation finishes successfully.' }}</p>
+      @if (exportError()) { <p role="alert">{{ exportError() }}</p> }
+      @if (readinessError()) { <p class="note" role="alert">{{ readinessError() }}</p> }
       <p class="scope-note">
         <strong>Grouped case—not a diagnosis.</strong>
         This record keeps related watcher observations together, tracks their lifecycle,
@@ -58,6 +68,15 @@ import type { Incident, NetworkEvent } from '../models';
   `,
   styles: [`
     .detail { padding: 0.75rem 1rem 1rem; border-top: 1px solid var(--line); }
+    .report-download {
+      display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.85rem;
+      margin-bottom: 0.35rem; border: 1px solid #438dc5; border-radius: 7px;
+      background: #173b56; color: #d7ecff; font: 600 0.78rem var(--sans, sans-serif);
+      cursor: pointer; transition: background 120ms, border-color 120ms;
+    }
+    .report-download:hover:not(:disabled) { background: #225475; border-color: var(--accent); }
+    .report-download:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .report-download:disabled { background: var(--panel-2); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
     .scope-note {
       margin: 0 0 0.8rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line);
       border-radius: 6px; color: var(--muted); background: var(--panel-2);
@@ -89,6 +108,32 @@ import type { Incident, NetworkEvent } from '../models';
 export class IncidentDetailComponent {
   readonly incident = input.required<Incident>();
   private readonly data = inject(DataService);
+  private readonly reports = inject(IncidentReportService);
+  readonly exporting = signal(false);
+  readonly exportError = signal<string | null>(null);
+  readonly reportReady = signal(false);
+  readonly readinessError = signal<string | null>(null);
+
+  constructor() {
+    effect(onCleanup => {
+      const incidentId = this.incident().incidentId;
+      this.reportReady.set(false);
+      this.readinessError.set(null);
+      onCleanup(this.reports.watchReady(incidentId,
+        ready => { this.reportReady.set(ready); this.readinessError.set(null); },
+        () => this.readinessError.set('Could not check investigation status. Reopen this case to retry.'),
+      ));
+    });
+  }
+
+  async downloadReport(): Promise<void> {
+    if (this.exporting() || !this.reportReady()) return;
+    this.exporting.set(true);
+    this.exportError.set(null);
+    try { await this.reports.download(this.incident().id); }
+    catch (error) { this.exportError.set(error instanceof Error ? error.message : 'Report export failed. Please retry.'); }
+    finally { this.exporting.set(false); }
+  }
 
   readonly events = computed(() => this.data.eventsFor(this.incident()));
 

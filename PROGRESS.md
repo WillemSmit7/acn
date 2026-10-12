@@ -1,6 +1,22 @@
 # ACN Progress
 
-Last updated: 2026-09-13
+Last updated: 2026-10-12
+
+## Operator diagnosis and incident reports
+
+The dashboard now presents evidence-based high/medium/low diagnosis confidence
+instead of lab ground-truth comparisons. Cited events and raw logs are loaded
+by document ID with timestamps, sources and metric attributes. The investigator
+prompt defines qualitative confidence, requires gaps and alternatives in the
+reasoning, and produces a manager-friendly plain-language summary. Hidden lab
+evaluation remains isolated and available for internal tests.
+
+Expanded incidents have a downloadable PDF containing that summary, confidence,
+timeline, measured timings, recorded approval/rejection history, action status
+and cited evidence. Export reads related records independently of the live
+dashboard window, marks unavailable/truncated records and makes no model call.
+Report rendering is local and uses embedded fonts. This does not change repair
+authority or claim that pending live-lab remediation acceptance is complete.
 
 ## ISP failure simulation update
 
