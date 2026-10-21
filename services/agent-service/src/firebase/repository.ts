@@ -7,11 +7,11 @@ import {
 import type { Logger } from '../logger.js';
 import type {
   AgentRepositoryPort,
-  DeterministicRootCause,
   EvidenceBundle,
   EvidenceEvent,
   EvidenceLog,
   InvestigableIncident,
+  LabGroundTruth,
   PromptRecord,
   RootCauseType,
   RunClaim,
@@ -23,6 +23,8 @@ export const COLLECTIONS = {
   networkEvents: 'networkEvents',
   networkLogs: 'networkLogs',
   agentRuns: 'agentRuns',
+  labEvaluations: 'labEvaluations',
+  labEvaluationState: 'labEvaluationState',
 } as const;
 
 export class AgentRepository implements AgentRepositoryPort {
@@ -44,17 +46,54 @@ export class AgentRepository implements AgentRepositoryPort {
     );
   }
 
+  async loadIncident(incidentId: string): Promise<InvestigableIncident | null> {
+    const snapshot = await this.db.collection(COLLECTIONS.incidents).doc(incidentId).get();
+    return snapshot.exists
+      ? toInvestigableIncident(snapshot.id, snapshot.data() ?? {})
+      : null;
+  }
+
   async claimRun(claim: RunClaim): Promise<boolean> {
     const ref = this.db.collection(COLLECTIONS.agentRuns).doc(claim.runId);
+    const incidentRef = this.db.collection(COLLECTIONS.incidents).doc(claim.incident.incidentId);
+    const currentRef = this.db.collection(COLLECTIONS.labEvaluationState).doc('current');
     return this.db.runTransaction(async (transaction) => {
       const existing = await transaction.get(ref);
       if (existing.exists) return false;
+      const incidentSnapshot = await transaction.get(incidentRef);
+      const currentIncident = incidentSnapshot.exists
+        ? toInvestigableIncident(incidentSnapshot.id, incidentSnapshot.data() ?? {})
+        : null;
+      if (currentIncident === null ||
+          currentIncident.investigationRevision !== claim.incident.investigationRevision) {
+        return false;
+      }
+      const current = await transaction.get(currentRef);
+      const currentData = current.data();
+      const candidateId = current.exists && currentData?.['status'] === 'pending' &&
+        typeof currentData['evaluationId'] === 'string'
+        ? currentData['evaluationId']
+        : null;
+      const evaluationRef = candidateId === null
+        ? null
+        : this.db.collection(COLLECTIONS.labEvaluations).doc(candidateId);
+      const evaluation = evaluationRef === null ? null : await transaction.get(evaluationRef);
+      const injectionRequestedAt = evaluation?.data()?.['injectionRequestedAt'];
+      const incidentStartedAt = claim.incident.startedAt === null
+        ? Number.NaN
+        : Date.parse(claim.incident.startedAt);
+      const evaluationId = evaluation?.data()?.['status'] === 'pending' &&
+        injectionRequestedAt instanceof Timestamp && Number.isFinite(incidentStartedAt) &&
+        incidentStartedAt >= injectionRequestedAt.toMillis()
+        ? candidateId
+        : null;
       transaction.create(ref, {
         runId: claim.runId,
         incidentId: claim.incident.incidentId,
         diagnosisVersion: claim.diagnosisVersion,
+        investigationRevision: claim.incident.investigationRevision,
         incidentStatus: claim.incident.status,
-        deterministicRootCause: claim.incident.rootCause,
+        labEvaluationId: evaluationId,
         status: 'running',
         stage: 'collecting_evidence',
         provider: 'openai',
@@ -69,6 +108,20 @@ export class AgentRepository implements AgentRepositoryPort {
         estimatedCostUsd: null,
         error: null,
       });
+      if (evaluationId !== null) {
+        transaction.update(evaluationRef!, {
+          status: 'claimed',
+          claimedAt: FieldValue.serverTimestamp(),
+          claimedByIncidentId: claim.incident.incidentId,
+          claimedByRunId: claim.runId,
+        });
+        transaction.update(currentRef, {
+          status: 'claimed',
+          claimedByIncidentId: claim.incident.incidentId,
+          claimedByRunId: claim.runId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
       return true;
     });
   }
@@ -102,6 +155,23 @@ export class AgentRepository implements AgentRepositoryPort {
     return { events, logs };
   }
 
+  async loadGroundTruth(runId: string): Promise<LabGroundTruth | null> {
+    const run = await this.db.collection(COLLECTIONS.agentRuns).doc(runId).get();
+    const evaluationId = run.exists && typeof run.data()?.['labEvaluationId'] === 'string'
+      ? run.data()?.['labEvaluationId'] as string
+      : null;
+    if (evaluationId === null) return null;
+
+    const evaluation = await this.db.collection(COLLECTIONS.labEvaluations).doc(evaluationId).get();
+    const expected = evaluation.data()?.['expected'];
+    if (!isObject(expected) || !isRootCauseType(expected['rootCauseType'])) return null;
+    return {
+      rootCauseType: expected['rootCauseType'],
+      rootCauseDevices: stringArray(expected['rootCauseDevices']),
+      expectedRemediationTool: remediationTool(expected['expectedRemediationTool']),
+    };
+  }
+
   async markAnalyzing(runId: string, evidence: EvidenceBundle, prompt: PromptRecord): Promise<void> {
     await this.db.collection(COLLECTIONS.agentRuns).doc(runId).update({
       stage: 'analyzing',
@@ -118,7 +188,11 @@ export class AgentRepository implements AgentRepositoryPort {
       status: 'completed',
       stage: 'completed',
       conclusion: completion.conclusion,
-      agreement: completion.agreement,
+      labGroundTruth: completion.groundTruth,
+      evaluation: completion.evaluation,
+      agreement: completion.evaluation === null
+        ? null
+        : completion.evaluation.overallMatch ? 'agree' : 'disagree',
       citedEvidence: {
         eventIds: completion.conclusion.citedEventIds,
         logIds: completion.conclusion.citedLogIds,
@@ -158,34 +232,22 @@ export class AgentRepository implements AgentRepositoryPort {
 }
 
 export function toInvestigableIncident(id: string, data: DocumentData): InvestigableIncident | null {
-  const rootCause = toRootCause(data['rootCause']);
-  if (rootCause === null) return null;
+  const eventIds = stringArray(data['eventIds']);
+  const settledAt = timestamp(data['settledAt']);
+  const investigationRevision = data['investigationRevision'];
+  if (eventIds.length === 0 || data['investigationReady'] !== true || settledAt === null ||
+      !Number.isSafeInteger(investigationRevision) || investigationRevision < 1) return null;
   return {
     incidentId: typeof data['incidentId'] === 'string' ? data['incidentId'] : id,
     status: data['status'] === 'resolved' ? 'resolved' : 'open',
     severity: data['severity'] === 'critical' ? 'critical' : 'warning',
+    startedAt: timestamp(data['startedAt']),
     symptoms: stringArray(data['symptoms']),
     affectedDevices: stringArray(data['affectedDevices']),
-    eventIds: stringArray(data['eventIds']),
-    rootCause,
-  };
-}
-
-function toRootCause(value: unknown): DeterministicRootCause | null {
-  if (!isObject(value)) return null;
-  const type = value['type'];
-  if (!isRootCauseType(type)) return null;
-  return {
-    type,
-    devices: stringArray(value['devices']),
-    summary: text(value['summary']),
-    confidence: value['confidence'] === 'confirmed' || value['confidence'] === 'probable'
-      ? value['confidence']
-      : 'unknown',
-    evidence: stringArray(value['evidence']),
-    predictedUnreachable: stringArray(value['predictedUnreachable']),
-    observedUnreachable: stringArray(value['observedUnreachable']),
-    predictionMatches: value['predictionMatches'] === true,
+    eventIds,
+    investigationReady: true,
+    settledAt,
+    investigationRevision,
   };
 }
 
@@ -227,6 +289,14 @@ function isRootCauseType(value: unknown): value is RootCauseType {
     value === 'routing_service_failure' ||
     value === 'resource_exhaustion' ||
     value === 'unknown';
+}
+
+function remediationTool(value: unknown): LabGroundTruth['expectedRemediationTool'] {
+  if (typeof value === 'string' && [
+    'restore_ospf_cost', 'restore_ospf_adjacency', 'enable_interface',
+    'restart_routing_service', 'restore_resource_profile',
+  ].includes(value)) return value as LabGroundTruth['expectedRemediationTool'];
+  return 'escalate_no_safe_action';
 }
 
 function stringArray(value: unknown): string[] {

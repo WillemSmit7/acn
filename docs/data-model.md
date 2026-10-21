@@ -1,9 +1,9 @@
 # ACN Firestore Data Model
 
 The database separates raw observations, normalized events, incidents, and AI
-activity. Increments 1 to 4 and the operator visualizer implement the first
-seven collections; the rest are
-documented here so the shape is stable when their increment arrives.
+activity. Increments 1 to 6 and the operator visualizer implement the current
+collections; planned records are documented so their shape is stable when
+their increment arrives.
 
 | Collection       | Status        | Written by       |
 |------------------|---------------|------------------|
@@ -14,8 +14,9 @@ documented here so the shape is stable when their increment arrives.
 | `incidents`      | Increment 3   | Incident Service |
 | `agentRuns`      | Increment 4   | Agent Service    |
 | `labActions`     | Visualizer    | Lab Controller   |
-| `agentActions`   | Increment 5   | Agent Service    |
-| `networkChanges` | Increment 5   | Network Controller |
+| `agentActions`   | Increment 6   | Network Controller |
+| `actionAuditEvents` | Increment 6 | Network Controller |
+| `networkChanges` | Increment 6   | Network Controller |
 
 ---
 
@@ -197,6 +198,9 @@ partial guesses about it.
   },
   "eventIds": ["<networkEvents ids>"],
   "eventCount": 13,
+  "investigationReady": true,
+  "settledAt": "<end of the latest evidence quiet period>",
+  "investigationRevision": 1,
   "updatedAt": "<server timestamp>"
 }
 ```
@@ -220,6 +224,9 @@ was made. They differ during recovery, on purpose.
 
 `eventIds` completes the traceability chain: incident -> networkEvents ->
 networkLogs, so any conclusion can be followed to the raw text a device emitted.
+`investigationReady` fails closed until the latest fault evidence has completed
+the settle window. `investigationRevision` increases only when a materially
+changed fault generation settles; recovery-only updates stay on the same revision.
 
 See `docs/incident-model.md` for the correlation and lifecycle rules.
 
@@ -227,30 +234,25 @@ See `docs/incident-model.md` for the correlation and lifecycle rules.
 
 ## `agentRuns/` — implemented
 
-One document per incident diagnosis version, written by the Agent Service. The
-document id is deterministic (`RUN-<incident>-<diagnosis hash>`), so repeated
-Firestore snapshots and service restarts cannot generate duplicate paid runs.
-A recovery event does not change the diagnosis version; only a changed
-deterministic root cause does.
+One document per settled incident evidence generation and prompt-contract version, written by the Agent
+Service. The deterministic document id prevents duplicate paid runs across
+Firestore snapshots and service restarts. Run identity does not depend on the
+deterministic root-cause mapper.
 
 ```json
 {
   "runId": "RUN-INC-001-8D21A2C04F10",
   "incidentId": "INC-001",
-  "diagnosisVersion": "<sha256 of the deterministic rootCause>",
+  "diagnosisVersion": "<sha256 of incident id, investigation revision and prompt version>",
+  "investigationRevision": 1,
   "incidentStatus": "open",
-  "deterministicRootCause": {
-    "type": "link_failure",
-    "devices": ["r2", "r3"],
-    "summary": "R2 <-> R3 link failure",
-    "confidence": "confirmed"
-  },
+  "labEvaluationId": "<opaque id, or null for production-style runs>",
   "status": "completed",
   "stage": "completed",
   "provider": "openai",
   "model": "gpt-5.6-luna",
   "reasoningEffort": "low",
-  "promptVersion": "gpt-investigator-v1",
+  "promptVersion": "gpt-investigator-v3-neutral-evidence",
   "prompt": {
     "version": "gpt-investigator-v1",
     "developer": "<read-only investigator policy>",
@@ -269,7 +271,15 @@ deterministic root cause does.
     "citedEventIds": ["<supporting event id>"],
     "citedLogIds": ["<supporting raw log id>"]
   },
-  "agreement": "agree",
+  "labGroundTruth": {
+    "rootCauseType": "interface_misconfiguration",
+    "rootCauseDevices": ["r2"]
+  },
+  "evaluation": {
+    "typeMatch": true,
+    "devicesMatch": true,
+    "overallMatch": true
+  },
   "citedEvidence": {
     "eventIds": ["<validated event ids>"],
     "logIds": ["<validated log ids>"]
@@ -302,8 +312,11 @@ Firestore failure is isolated to this service and cannot stop monitoring.
 `evidenceRefs` means evidence included in the prompt. `citedEvidence` is the
 smaller subset the model used to support its conclusion. Every cited id is
 validated against the supplied evidence before a run can complete. The
-`agreement` field is computed by the service from root-cause type and device
-set; the model cannot mark its own answer as agreeing.
+Lab ground truth stays in a separate server-only document while GPT is working
+and is never included in the prompt. After a cited conclusion is returned, the
+service publishes `typeMatch`, `devicesMatch` and `overallMatch`. The model
+cannot score its own answer. Runs without controller-created truth are
+explicitly unscored.
 
 The exact prompt, model, reasoning effort, response id, token breakdown,
 latency, pricing snapshot and cost estimate are retained so a run can be
@@ -337,38 +350,73 @@ display record for the synthetic lab, not an AI-proposed action.
 
 ---
 
-## Planned collections
+## `agentActions/` — Increment 6 persistence implemented
 
-### `agentActions/` — Increment 5
+The document id is the deterministic `actionId`. Proposal identity fields are
+immutable after creation. Creation validates the exact `agentRuns/{agentRunId}`
+document in the same transaction: it must be completed, belong to the incident,
+and its conclusion must support the tool and cited evidence. A replay returns
+the existing document; it does not create another audit event.
 
 ```json
 {
+  "actionId": "ACT-...",
+  "idempotencyKey": "<sha256 of canonical proposal identity>",
   "incidentId": "INC-001",
   "agentRunId": "RUN-001",
-  "deviceId": "r2",
-  "action": "enable_interface",
-  "parameters": { "interface": "eth2" },
-  "riskLevel": "medium",
+  "tool": "enable_interface",
+  "rationale": "The interface is administratively down.",
+  "citedEvidenceIds": ["<validated event or log id>"],
+  "target": { "deviceId": "r2", "component": "eth2 admin state" },
+  "risk": "high",
   "approvalRequired": true,
   "approvedBy": null,
+  "approvedAt": null,
   "status": "proposed",
-  "createdAt": "..."
+  "preflight": null,
+  "verification": null,
+  "error": null,
+  "createdAt": "<server timestamp>",
+  "updatedAt": "<server timestamp>"
 }
 ```
 
-### `networkChanges/` — Increment 5
+No executable path, command, Docker argument, credential, arbitrary target, or
+model-supplied parameter is accepted or stored.
+
+## `actionAuditEvents/` — Increment 6 persistence implemented
+
+Append-only, create-only documents use a deterministic action/transition id.
+The action update and its audit event are committed in one transaction.
 
 ```json
 {
+  "actionId": "ACT-...",
   "incidentId": "INC-001",
+  "actor": "human",
+  "transition": "approved",
+  "reason": "approved by operator@example.test",
+  "occurredAt": "<server timestamp>"
+}
+```
+
+## `networkChanges/` — Increment 6 fixed repair adapters
+
+```json
+{
+  "changeId": "CHANGE-ACT-...",
+  "actionId": "ACT-...",
+  "incidentId": "INC-001",
+  "operation": "enable_interface",
   "deviceId": "r2",
-  "action": "enable_interface",
-  "performedBy": "claude-agent",
-  "beforeState": { "interface": "eth2", "status": "down" },
-  "afterState":  { "interface": "eth2", "status": "up" },
-  "successful": true,
-  "rollbackAvailable": true,
-  "createdAt": "..."
+  "interface": "eth2",
+  "status": "verified",
+  "beforeState": { "interface": "eth2", "adminState": "down" },
+  "afterState":  { "interface": "eth2", "adminState": "up" },
+  "transport": { "stdout": "<bounded>", "stderr": "<bounded>", "outcome": "completed" },
+  "verification": { "recovered": true, "reason": "<observer outcome>", "evidenceIds": ["..."] },
+  "startedAt": "<server timestamp>",
+  "completedAt": "<server timestamp>"
 }
 ```
 
@@ -388,9 +436,10 @@ status over time.
 `firebase/firestore.rules` denies **all client writes**. Every write comes from
 a backend service using the Admin SDK, which bypasses rules.
 
-Client *reads* are open for the seven collections the operator dashboard
-renders (`devices`, `healthChecks`, `networkLogs`, `networkEvents`, `incidents`,
-`agentRuns`, `labActions`). Collections belonging to later increments stay closed.
+Client reads are open for the ten collections the local operator dashboard
+renders, including `agentActions`, `actionAuditEvents`, and `networkChanges`.
+Writes remain denied everywhere; approval goes through the loopback-only
+Network Controller API.
 
 That is safe only because the dashboard runs against a local emulator holding
 synthetic lab data, with no Firebase Auth yet. **This ruleset must not be

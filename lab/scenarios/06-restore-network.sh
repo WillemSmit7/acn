@@ -15,12 +15,11 @@ ${DOCKER} exec clab-acn-r2 vtysh \
   -c 'interface eth2' -c 'no shutdown' -c 'no ip ospf cost' \
   -c 'router ospf' -c 'no passive-interface eth2'
 
-echo "==> Removing the r3 CPU limit before restoring its control plane"
-# Restore CPU capacity first; otherwise ospfd and watchfrr can remain starved
-# while cleanup tries to stop workers and bring the control plane back.
-${DOCKER} update --cpu-quota -1 clab-acn-r3 >/dev/null
-
 echo "==> Removing r3 resource pressure and restoring ospfd"
+# Lift resource pressure before cleanup so the recovery process is not starved.
+# One CPU is ACN's explicit approved baseline; zero-valued updates are not
+# reflected reliably by all Docker engines.
+${DOCKER} update --cpus 1 clab-acn-r3 >/dev/null
 ${DOCKER} exec clab-acn-r3 sh -c '
   if [ -s /tmp/acn-resource-pids ]; then
     while read -r pid; do
@@ -37,7 +36,9 @@ ${DOCKER} exec clab-acn-r3 sh -c '
     rm -f /var/run/frr/ospfd.pid /var/run/frr/ospfd.vty
   fi
   if [ -s /tmp/acn-watchfrr-stopped ]; then
-    kill -CONT $(cat /tmp/acn-watchfrr-stopped) 2>/dev/null || true
+    watch=$(cat /tmp/acn-watchfrr-stopped 2>/dev/null || true)
+    [ "$(cat "/proc/$watch/comm" 2>/dev/null || true)" = watchfrr ] || watch=$(pidof watchfrr 2>/dev/null || true)
+    [ -z "$watch" ] || kill -CONT $watch 2>/dev/null || true
     rm -f /tmp/acn-watchfrr-stopped
   fi
   # Let watchfrr repair ospfd itself first; restarting all FRR daemons here

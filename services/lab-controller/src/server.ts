@@ -35,7 +35,9 @@ async function route(
   if (request.method === 'GET' && url.pathname === '/api/status') {
     json(response, 200, {
       ...service.status(),
-      scenarios: Object.values(SCENARIOS).map(({ scriptPath: _scriptPath, ...scenario }) => scenario),
+      scenarios: Object.values(SCENARIOS).map(
+        ({ scriptPath: _scriptPath, groundTruth: _groundTruth, ...scenario }) => scenario,
+      ),
     });
     return;
   }

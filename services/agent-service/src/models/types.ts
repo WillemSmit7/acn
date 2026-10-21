@@ -7,27 +7,17 @@ export type RootCauseType =
   | 'routing_service_failure'
   | 'resource_exhaustion'
   | 'unknown';
-export type DeterministicConfidence = 'confirmed' | 'probable' | 'unknown';
-
-export interface DeterministicRootCause {
-  type: RootCauseType;
-  devices: string[];
-  summary: string;
-  confidence: DeterministicConfidence;
-  evidence: string[];
-  predictedUnreachable: string[];
-  observedUnreachable: string[];
-  predictionMatches: boolean;
-}
-
 export interface InvestigableIncident {
   incidentId: string;
   status: 'open' | 'resolved';
   severity: 'critical' | 'warning';
+  startedAt: string | null;
   symptoms: string[];
   affectedDevices: string[];
   eventIds: string[];
-  rootCause: DeterministicRootCause;
+  investigationReady: boolean;
+  settledAt: string;
+  investigationRevision: number;
 }
 
 export interface EvidenceEvent {
@@ -54,6 +44,19 @@ export interface EvidenceBundle {
   logs: EvidenceLog[];
 }
 
+export interface LabGroundTruth {
+  rootCauseType: RootCauseType;
+  rootCauseDevices: string[];
+  expectedRemediationTool: AgentConclusion['remediationProposal']['tool'];
+}
+
+export interface EvaluationScore {
+  typeMatch: boolean;
+  devicesMatch: boolean;
+  remediationMatch: boolean;
+  overallMatch: boolean;
+}
+
 export interface PromptRecord {
   version: string;
   developer: string;
@@ -68,6 +71,17 @@ export interface AgentConclusion {
   reasoning: string[];
   citedEventIds: string[];
   citedLogIds: string[];
+  remediationProposal: {
+    tool:
+      | 'restore_ospf_cost'
+      | 'restore_ospf_adjacency'
+      | 'enable_interface'
+      | 'restart_routing_service'
+      | 'restore_resource_profile'
+      | 'escalate_no_safe_action';
+    rationale: string;
+    citedEvidenceIds: string[];
+  };
 }
 
 export interface ModelUsage {
@@ -98,13 +112,16 @@ export interface RunClaim {
 }
 
 export interface RunCompletion extends ModelResult {
-  agreement: 'agree' | 'disagree';
+  groundTruth: LabGroundTruth | null;
+  evaluation: EvaluationScore | null;
 }
 
 export interface AgentRepositoryPort {
   watchIncidents(onIncidents: (incidents: InvestigableIncident[]) => void): () => void;
+  loadIncident(incidentId: string): Promise<InvestigableIncident | null>;
   claimRun(claim: RunClaim): Promise<boolean>;
   loadEvidence(eventIds: string[]): Promise<EvidenceBundle>;
+  loadGroundTruth(runId: string): Promise<LabGroundTruth | null>;
   markAnalyzing(runId: string, evidence: EvidenceBundle, prompt: PromptRecord): Promise<void>;
   completeRun(runId: string, completion: RunCompletion): Promise<void>;
   failRun(runId: string, error: unknown, latencyMs: number): Promise<void>;

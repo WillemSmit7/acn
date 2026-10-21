@@ -4,19 +4,22 @@ A testable network-operations environment where network data is collected,
 normalized, stored and — in later increments — reasoned about and acted on by
 an AI agent.
 
-**Current status: Increments 1–4 complete, with a live operator visualizer.**
+**Current status: Increments 1–5 complete; Increment 6 guarded remediation is implemented and awaiting live-lab acceptance.**
 See [PROGRESS.md](PROGRESS.md).
 
 The current end-to-end path is:
 
 ```
 network -> health/log collection -> normalized events -> incidents
-        -> GPT-5.6 Luna investigation -> live NOC dashboard
+        -> GPT investigation -> validated proposal -> human approval
+        -> fixed repair -> autonomous verification -> live NOC dashboard
 ```
 
-The AI layer is strictly read-only. It investigates incidents and records its
-reasoning, evidence citations, agreement, usage, latency and cost in
-`agentRuns/`; it has no network action capability.
+GPT has no command or network capability. It emits one typed proposal as inert
+data. The localhost Network Controller validates the completed run and
+citations, a named human approves, and only a code-owned adapter can run. The
+Each of the five mutating adapters has one fixed lab target; success requires
+fresh autonomous recovery evidence and a resolved incident.
 
 ---
 
@@ -72,7 +75,7 @@ npm run start:all
 
 This builds the project, verifies the lab and deploys a healthy baseline when
 needed, then starts Firestore, all telemetry/correlation/investigation services,
-the local Lab Controller and the Angular visualizer. It selects the first free
+the local Lab Controller, guarded Network Controller and Angular visualizer. It selects the first free
 dashboard port from 4200 upward, opens it when a desktop session is available,
 and prints every endpoint and log path.
 
@@ -149,7 +152,17 @@ npm run lab-controller   # localhost-only API on 127.0.0.1:8787
 ```
 
 This powers five whitelisted fault buttons plus restore. It is a manual
-synthetic-lab harness, completely separate from Luna; the AI remains read-only.
+synthetic-lab harness, completely separate from GPT remediation.
+
+**Terminal 8 — guarded Network Controller**
+
+```bash
+npm run network-controller   # approval API on 127.0.0.1:8788
+```
+
+It watches completed runs, persists validated proposals, and exposes exact
+approve/reject routes. Every adapter uses reviewed, fixed `docker` argument
+arrays with no shell and no model- or request-controlled target or argument.
 
 **The NOC dashboard** (live view and manual demo controls)
 
@@ -161,6 +174,8 @@ No real Firebase project is needed: the browser app talks to the Firestore
 emulator with the ordinary Firebase SDK, live `onSnapshot` listeners and all.
 The browser still has no Firestore write permission and cannot execute an
 arbitrary command. Buttons call only the localhost controller's named routes.
+The repair card calls the separate Network Controller; an approval request
+carries only the action id and operator identity.
 
 ---
 
@@ -254,8 +269,28 @@ This runs the live stack through all five ISP-style fault scenarios:
 
 For fast, deterministic verification with no model charge, run
 `npm run test:e2e:failure-categories`. It exercises autonomous state snapshots
-through transition detection, deterministic diagnosis and the agent
-prompt/agreement boundary.
+through transition detection, neutral prompt projection and post-response
+ground-truth scoring.
+
+For live guarded repair acceptance across all five fault scenarios, with the
+lab and emulator running:
+
+```bash
+npm run test:e2e:guarded-remediation
+```
+
+This injects the interface-disabled scenario, creates a deterministic validated
+completed-run fixture (no paid model call), approves it through the same API as
+the dashboard, and asserts the action, audit trail, network change, fresh
+observer recovery and resolved incident. The script is provided without a
+claim that it has been run successfully on a live lab in this change.
+
+With the Firestore emulator running, the lab-only truth boundary itself is
+verified without a model call:
+
+```bash
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run test:e2e:evaluation-boundary
+```
 
 For Increment 4, this creates both real incidents and has GPT-5.6 Luna
 investigate them. It is verified against the real lab and live API:
@@ -264,14 +299,46 @@ investigate them. It is verified against the real lab and live API:
 OPENAI_API_KEY=... ./scripts/e2e-agent.sh
 ```
 
-It verifies that each run cites real events and raw logs, explicitly records
-agreement or disagreement with the deterministic diagnosis, distinguishes the
-two fault scenarios, and records model, prompt, tokens, latency and cost.
+It verifies that each run cites real events and raw logs, receives no
+deterministic diagnosis or cause-revealing event label, distinguishes the fault
+scenarios, and records model, prompt, tokens, latency and cost. Runs started by
+direct scenario scripts are intentionally unscored; controller-triggered lab
+runs receive hidden ground truth after GPT responds.
 
 For an interactive demonstration, keep all services running, open the NOC
 dashboard and use **Manual fault controls**. The **Live operations timeline**
 merges health checks, raw FRR lines, normalized events, incident correlation,
 controller output and Luna's current/final comment in timestamp order.
+
+### Diagnosis confidence and incident PDFs
+
+The investigation panel shows the suspected cause, qualitative confidence
+(high, medium or low), reasoning and supporting evidence. Confidence is the
+model's assessment of the supplied evidence, not a verified probability.
+Expand cited events and logs to inspect their IDs, UTC timestamps, sources,
+metric attributes and original output. Evidence is fetched by document ID,
+including records outside the dashboard's recent window. Missing records or
+read failures are shown explicitly. Hidden lab scoring remains an internal
+test mechanism and is not presented as diagnosis confidence.
+
+Once the latest investigation finishes successfully, expand its incident and
+select **Download incident PDF** to export a report with
+a plain-language summary, diagnosis and confidence, timeline, measured elapsed
+times, approval/rejection history, action status and cited evidence. The summary
+reuses the completed investigation's generated summary; export makes no new
+model call. New investigations use the manager-friendly summary prompt, while
+older investigations retain their original text. Download is disabled when
+there is no completed summary or a newer investigation is pending or failed;
+the export service also checks eligibility before generating a PDF. Reports
+use a styled cover header, timing cards, a readable timeline and a separate
+evidence appendix.
+
+PDFs use a fresh read of the incident and related records, with explicit notices
+for missing evidence or history limits. All timestamps are UTC. Unavailable
+timings are marked rather than estimated; unresolved cases are not reported as
+recovered. Operator names are recorded values, not authenticated identities.
+The renderer and embedded fonts load locally; incident data is not sent to a
+PDF service. Run `npm run test:incident-report` for report and pagination checks.
 
 ---
 
@@ -369,7 +436,7 @@ acn/
 │   ├── incident-service/    Increment 3 — networkEvents -> incidents
 │   ├── agent-service/       Increment 4 — GPT read-only investigation -> agentRuns
 │   ├── lab-controller/      Local manual demo controls -> labActions
-│   └── network-controller/  Increment 5 (placeholder)
+│   └── network-controller/  Increment 6 — guarded proposals, approval and fixed repair
 ├── apps/web/                Angular NOC dashboard — live telemetry/investigation + lab controls
 ├── firebase/                Firestore rules and indexes
 ├── scripts/                 end-to-end test and helpers
