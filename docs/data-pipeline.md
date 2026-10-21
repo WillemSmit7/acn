@@ -1,11 +1,13 @@
 # ACN Data Pipeline
 
-This guide follows network data from where it originates to the places where
-an operator or service consumes it. The stages are **source, ingestion,
-storage, processing, and serving**. The current pipeline is observability and
-investigation only: the AI agent does not make network changes.
+This guide follows ACN's telemetry and investigation data pipeline: how
+observations of the network move from source through ingestion, storage, and
+processing to the services and operators that consume them. It is distinct
+from the network data plane, which is the routed path ACN monitors. The current
+pipeline is observability and investigation only: the AI agent does not make
+network changes.
 
-## Pipeline overview
+## ACN telemetry and investigation pipeline
 
 ```mermaid
 flowchart LR
@@ -70,7 +72,8 @@ They do not wait on one another.
 
 1. Tails the FRR daemon log files mounted from the router containers.
 2. Independently polls router state using Docker probes; fault and recovery
-   transitions from these probes are fed through the same pipeline.
+   transitions from these probes are fed through the same Layer 0 processing
+   path.
 3. Parses the FRR log envelope, then applies normalization rules to recognize
    meaningful events. Parsing extracts structure; normalization assigns event
    meaning. Routine messages and intermediate OSPF states can produce no event.
@@ -190,5 +193,5 @@ remediation interface.
 - Layer 0 emits events but does not decide what constitutes an incident.
 - Incident diagnosis is deterministic and does not depend on the AI result.
 - The AI investigates and records; it does not remediate.
-- The local Lab Controller is separate from that pipeline and is restricted to
-  fixed manual scenarios.
+- The local Lab Controller is separate from the telemetry and investigation
+  pipeline and is restricted to fixed manual scenarios.

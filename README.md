@@ -235,7 +235,7 @@ recorded both healthy and down results and that `r3` produced
 `device_unreachable` followed by `device_recovered`.
 
 For Increment 2, this runs the Health Service and Layer 0 together over the same
-cycle and asserts the log pipeline:
+cycle and asserts the log collection and normalization flow:
 
 ```bash
 ./scripts/e2e-layer-zero.sh
@@ -370,7 +370,7 @@ acn/
 │   ├── agent-service/       Increment 4 — GPT read-only investigation -> agentRuns
 │   ├── lab-controller/      Local manual demo controls -> labActions
 │   └── network-controller/  Increment 5 (placeholder)
-├── apps/web/                Angular NOC dashboard — live pipeline + lab controls
+├── apps/web/                Angular NOC dashboard — live telemetry/investigation + lab controls
 ├── firebase/                Firestore rules and indexes
 ├── scripts/                 end-to-end test and helpers
 └── docs/                    architecture, data model, incident model
@@ -381,8 +381,10 @@ acn/
 ## Documentation
 
 - [PROGRESS.md](PROGRESS.md) — what is done, what is next
+- [docs/developer-manual.md](docs/developer-manual.md) — contributor workflow, change locations, tests, and troubleshooting
 - [docs/architecture.md](docs/architecture.md) — layering and key design decisions
-- [docs/data-pipeline.md](docs/data-pipeline.md) — how data moves from source to serving
-- [docs/FunctionDiagrams.md](docs/FunctionDiagrams.md) — flow diagrams for collector logic
+- [docs/data-pipeline.md](docs/data-pipeline.md) — ACN's telemetry and investigation
+  data pipeline, from source to serving
+- [docs/FunctionDiagrams.md](docs/FunctionDiagrams.md) — component responsibilities and diagrams of implemented and planned system flows
 - [docs/data-model.md](docs/data-model.md) — Firestore collections
 - [docs/incident-model.md](docs/incident-model.md) — correlation and root-cause rules

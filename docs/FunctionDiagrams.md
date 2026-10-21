@@ -1,7 +1,9 @@
 # Function Diagrams
 
 This document collects flow diagrams for specific ACN logic units. The diagrams
-show each unit's inputs, transformations, decisions, and outputs.
+show each unit's inputs, transformations, decisions, and outputs across the
+telemetry and investigation flow. They describe ACN's software processing, not
+the network data plane being monitored.
 
 ## Services and responsibilities
 
@@ -18,7 +20,7 @@ each component.
 | Incident Service | Implemented backend service | Consumes `networkEvents/`, correlates related symptoms, waits for evidence to settle, determines a reproducible root cause, tracks recovery, and writes `incidents/`. | Turns individual signals into an understandable incident with a diagnosis. |
 | Agent Service | Implemented, read-only backend service | Reads diagnosed incidents and linked event/log evidence, requests an independent structured investigation, validates citations, compares conclusions with the baseline, and writes lifecycle/results to `agentRuns/`. | Provides a second opinion with evidence and an auditable record; it cannot change the network. |
 | OpenAI Responses API (GPT-5.6 Luna) | External dependency used by Agent Service | Receives the investigation prompt and supplied evidence, then returns a structured conclusion; no tools or action capability are provided. | Supplies the AI investigation, while ACN retains control of evidence, validation, and recording. |
-| Angular NOC dashboard | Implemented operator-facing web app | Subscribes to recent Firestore data, renders topology, timeline, incidents, evidence, events and agent runs, and reports listener errors. All Firestore access from the browser is read-only. | Lets an operator see the end-to-end pipeline and inspect why ACN reached a conclusion. |
+| Angular NOC dashboard | Implemented operator-facing web app | Subscribes to recent Firestore data, renders topology, timeline, incidents, evidence, events and agent runs, and reports listener errors. All Firestore access from the browser is read-only. | Lets an operator follow the telemetry and investigation flow and inspect why ACN reached a conclusion. |
 | Lab Controller | Implemented localhost-only control service | Accepts only named scenario IDs, maps them to repository-owned scripts, allows one action at a time, and records status/output in `labActions/`. | Provides fixed manual fault-injection and restore controls for the synthetic lab without granting the AI action authority. |
 | Lab scenario scripts | Implemented fixed action targets | Apply one of five named lab fault scenarios or restore the lab; scripts do not act as an open-ended command interface. | Make demonstrations repeatable and constrain what the manual controls can change. |
 | `start-all.sh` launcher | Optional operational helper | Builds/verifies the stack, starts the selected local processes, records logs, and owns cleanup of the processes it starts. | Starts and stops the local demo as one managed stack; it does not process network data itself. |
@@ -331,10 +333,10 @@ can analyze and report, but cannot remediate or otherwise change the network.
 
 ## Angular dashboard
 
-The Angular NOC dashboard is a live viewer for the implemented pipeline plus
-manual controls for the synthetic lab. Its Firestore path is read-only; manual
-actions go through a separate localhost-only Lab Controller and are not exposed
-to the Agent Service.
+The Angular NOC dashboard is a live viewer for the implemented telemetry and
+investigation flow plus manual controls for the synthetic lab. Its Firestore
+path is read-only; manual actions go through a separate localhost-only Lab
+Controller and are not exposed to the Agent Service.
 
 ```mermaid
 flowchart TD

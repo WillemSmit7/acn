@@ -68,7 +68,7 @@ AUDIT + VERIFICATION
 +------------------------------------------------------------------+
 ```
 
-## System pipeline at a glance
+## Monitoring and investigation flow at a glance
 
 ```mermaid
 flowchart LR
@@ -120,11 +120,12 @@ flowchart LR
   Controller --> Actions --> Dashboard
 ```
 
-The main data pipeline runs from the emulated network through independent
-collection, stored evidence, deterministic incident correlation, and
-read-only AI investigation. The dashboard reads the resulting data. Manual
-scenario controls form a separate operator-only lane: they inject fixed lab
-faults and do not connect the Agent Service to network actions.
+The monitoring and investigation pipeline starts with observations of the
+emulated network's data plane, then passes through independent collection,
+stored evidence, deterministic incident correlation, and read-only AI
+investigation. The dashboard reads the resulting data. Manual scenario controls
+form a separate operator-only lane: they inject fixed lab faults and do not
+connect the Agent Service to network actions.
 
 ## Ingestion flow
 
