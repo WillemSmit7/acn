@@ -61,11 +61,11 @@ AUDIT + VERIFICATION
 |               v                                                   |
 |  +--------------------------+                                     |
 |  |       Agent Service      |  GPT-5.6 Luna, low reasoning       |
-|  |  read-only -> agentRuns/ |  no network/action capability      |
+|  | evidence -> agentRuns/   | inert typed proposal only          |
 |  +--------------------------+                                     |
 |                                                                  |
 |  completed run -> Network Controller <- human approval (browser) |
-|                   fixed R2 eth2 adapter -> observer verification |
+|                   fixed adapters -> observer verification        |
 |                                                                  |
 |  Browser --named action--> Lab Controller --fixed script--> Lab  |
 |             127.0.0.1 only; output -> labActions/                |
@@ -92,8 +92,10 @@ flowchart LR
   subgraph Diagnose["3. Correlate and investigate"]
     Incident["Incident Service<br/>deterministic diagnosis"]
     Incidents[("incidents/")]
-    Agent["Agent Service<br/>read-only GPT investigation"]
+    Agent["Agent Service<br/>neutral-evidence GPT investigation"]
     Runs[("agentRuns/")]
+    NetworkController["Network Controller<br/>human approval + fixed adapters"]
+    Changes[("agentActions/<br/>actionAuditEvents/<br/>networkChanges/")]
   end
 
   Dashboard["4. Operator view<br/>read-only NOC dashboard"]
@@ -110,26 +112,32 @@ flowchart LR
   Events -.->|"eventIds"| Agent
   Logs -.->|"sourceLogId"| Agent
   Agent --> Runs
+  Runs -->|"optional inert repair proposal"| NetworkController
+  NetworkController --> Changes
 
   Checks --> Dashboard
   Logs --> Dashboard
   Events --> Dashboard
   Incidents --> Dashboard
   Runs --> Dashboard
+  Changes --> Dashboard
 
   Browser["Operator's browser controls"]
-  Controller["Local Lab Controller<br/>fixed named actions"]
-  Actions[("labActions/")]
-  Browser --> Controller -->|"scenario scripts"| Network
-  Controller --> Actions --> Dashboard
+  LabController["Local Lab Controller<br/>fixed named fault scenarios"]
+  LabActions[("labActions/")]
+  Browser --> LabController -->|"scenario scripts"| Network
+  LabController --> LabActions --> Dashboard
+  Browser -->|"approve / reject"| NetworkController
 ```
 
 The monitoring and investigation pipeline starts with observations of the
 emulated network's data plane, then passes through independent collection,
-stored evidence, deterministic incident correlation, and read-only AI
-investigation. The dashboard reads the resulting data. Manual scenario controls
-form a separate operator-only lane: they inject fixed lab faults and do not
-connect the Agent Service to network actions.
+stored evidence, deterministic incident correlation, and evidence-first GPT
+investigation. GPT may return an inert typed repair proposal; the separate
+Network Controller requires human approval, a fixed adapter, and fresh
+observer-backed verification before recording success. The dashboard reads the
+resulting data. Manual scenario controls form a separate operator-only lane:
+they inject fixed lab faults and do not give GPT control authority.
 
 ## Ingestion flow
 
@@ -207,19 +215,22 @@ approval calls the separate loopback-only Network Controller.
 
 The Agent Service watches settled diagnoses, follows `eventIds` into
 `networkEvents/` and `sourceLogId` into the untouched `networkLogs/` text, then
-calls the OpenAI Responses API with `gpt-5.6-luna`. Its only write is the
-investigation record in `agentRuns/`. It owns no Docker, SSH, `vtysh`, network
-controller or executable interface, so GPT cannot supply a command, target,
-path or argument. Its typed proposal is inert until the Network Controller
-revalidates the completed run and a human approval is durably recorded.
+calls the OpenAI Responses API with `gpt-5.6-luna`. It writes investigation
+records to `agentRuns/` and atomically claims eligible hidden lab evaluations
+for internal scoring; expected outcomes are withheld until GPT returns a valid
+cited conclusion. It owns no Docker, SSH, `vtysh`, network controller or
+executable interface, so GPT cannot supply a command, target, path or argument.
+Its typed proposal is inert until the Network Controller revalidates the
+completed run and a human approval is durably recorded.
 
 The Lab Controller is deliberately outside that path. It binds to
 `127.0.0.1`, exposes only six named routes, maps them to repository-owned lab
 scenario scripts and records lifecycle/output in `labActions/`. It accepts no
 command, path, device or interface parameters and refuses overlapping actions.
-This gives a human an interactive demo harness without giving GPT an action
-tool. It is not the general Network Controller planned for Increment 5 and has
-no production authority model.
+This gives a human an interactive demo harness without giving GPT an execution
+tool. It is separate from the Increment 6 Network Controller, which processes
+inert repair proposals only after a human approval. Production RBAC and
+distributed controller leadership remain deferred.
 
 ## Why the Health Service pings loopbacks, not management addresses
 
@@ -307,9 +318,10 @@ failure for exactly that reason.
 
 ## Why correlation is deterministic
 
-Increment 3 uses explicit rules, not an LLM. GPT-5.6 Luna appears only in
-Increment 4, after the incident already exists. An inference nobody can
-reproduce is not a baseline to improve on.
+Increment 3 uses explicit rules, not an LLM. GPT-5.6 Luna investigates only
+after the incident already exists, and Increment 5 evaluates its conclusion
+against lab-only ground truth withheld until after the answer. An inference
+nobody can reproduce is not a baseline to improve on.
 
 The rules turn on one question — did the far end of the link corroborate? — and
 every conclusion records its evidence in plain language plus a check of what it
@@ -335,9 +347,8 @@ routed through the separate Network Controller.
 
 It connects to the Firestore **emulator** with the ordinary Firebase JS SDK -
 same queries, same live `onSnapshot` listeners it would use against a real
-project. So no real Firebase project is needed to run a browser UI, and nothing
-about the UI changes when one arrives in Increment 10. The repo stays free of
-credentials and `./scripts/reset-firestore.sh` keeps working.
+project. No real Firebase project is needed to run the local browser UI. The
+repo stays free of credentials and `./scripts/reset-firestore.sh` keeps working.
 
 The one thing that did have to change is `firebase/firestore.rules`, which
 denied all client access. Reads are now open only for collections the dashboard
@@ -348,8 +359,11 @@ The Increment 5 view shows `collecting evidence` and `analyzing` stages live.
 GPT receives neutral observations and raw logs without the deterministic
 diagnosis, scenario label or incident symptoms. For controller-triggered lab
 runs, the completed view then reveals hidden lab ground truth beside GPT's
-committed conclusion and scores cause type and device set separately. Direct
-script and production-style runs remain explicitly unscored.
+conclusion and scores cause type, device set, and proposed repair tool
+separately. Direct script and production-style runs remain explicitly
+unscored. An optional proposal stays inert until reviewed in the UI and
+approved through the Network Controller; recovery is verified from fresh
+observer evidence.
 
 The operator timeline merges recent health probes, raw FRR lines, normalized
 events, incident state, lab action output and agent state by timestamp. This is

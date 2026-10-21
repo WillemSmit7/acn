@@ -14,12 +14,14 @@ included in the model prompt.
    observations and supplies those observations plus raw device logs to GPT.
    Deterministic root cause, incident symptoms, scenario names and controller
    output are excluded.
-3. **Ground truth:** the localhost-only lab controller records the expected cause
-   and device set in a separate `labEvaluations` collection. Direct invocation of
-   a scenario script creates no evaluation record.
+3. **Ground truth:** the localhost-only Lab Controller records the expected
+   cause, device set, and remediation tool in a separate `labEvaluations`
+   collection. Direct invocation of a scenario script creates no evaluation
+   record.
 4. **Evaluation:** only after GPT returns a valid, cited conclusion does Agent
-   Service load the associated ground truth, score cause type and device set
-   independently, and publish the comparison on the completed run.
+   Service load the associated ground truth, score cause type, device set, and
+   proposed remediation tool independently, and publish the comparison on the
+   completed run.
 5. **Production behavior:** when no lab evaluation is associated, the GPT
    diagnosis is stored normally and the run is explicitly marked unscored.
 
@@ -33,8 +35,9 @@ included in the model prompt.
 - Add a neutral evidence projection with an allow-list of factual attributes.
   Remove event types, symptoms, deterministic diagnosis and predicted impact
   from the prompt. Version the prompt as v3.
-- Persist structured evaluation results after the conclusion is committed:
-  `typeMatch`, `devicesMatch`, and `overallMatch`. Keep unscored runs explicit.
+- Persist structured evaluation results after the valid conclusion:
+  `typeMatch`, `devicesMatch`, `remediationMatch`, and `overallMatch`. Keep
+  unscored runs explicit.
 - Update the dashboard to show **Lab ground truth** beside **GPT diagnosis** only
   for completed scored runs.
 - Add unit, integration and focused end-to-end tests for prompt leakage,

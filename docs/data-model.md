@@ -1,9 +1,9 @@
 # ACN Firestore Data Model
 
-The database separates raw observations, normalized events, incidents, and AI
-activity. Increments 1 to 6 and the operator visualizer implement the current
-collections; planned records are documented so their shape is stable when
-their increment arrives.
+The database separates raw observations, normalized events, incidents, AI
+investigations, blind lab evaluations, and guarded repair records. Increments
+1 to 6 and the operator visualizer implement the current collections; later
+records are documented so their shape is stable when their increment arrives.
 
 | Collection       | Status        | Written by       |
 |------------------|---------------|------------------|
@@ -13,6 +13,7 @@ their increment arrives.
 | `networkLogs`    | Increment 2   | Layer 0          |
 | `incidents`      | Increment 3   | Incident Service |
 | `agentRuns`      | Increment 4   | Agent Service    |
+| `labEvaluations` | Increment 5   | Lab Controller, Agent Service |
 | `labActions`     | Visualizer    | Lab Controller   |
 | `agentActions`   | Increment 6   | Network Controller |
 | `actionAuditEvents` | Increment 6 | Network Controller |
@@ -254,7 +255,7 @@ deterministic root-cause mapper.
   "reasoningEffort": "low",
   "promptVersion": "gpt-investigator-v3-neutral-evidence",
   "prompt": {
-    "version": "gpt-investigator-v1",
+    "version": "gpt-investigator-v3-neutral-evidence",
     "developer": "<read-only investigator policy>",
     "input": "<exact incident and evidence JSON>"
   },
@@ -269,15 +270,22 @@ deterministic root-cause mapper.
     "confidence": "high",
     "reasoning": ["Both endpoints independently logged the loss."],
     "citedEventIds": ["<supporting event id>"],
-    "citedLogIds": ["<supporting raw log id>"]
+    "citedLogIds": ["<supporting raw log id>"],
+    "remediationProposal": {
+      "tool": "enable_interface",
+      "rationale": "The cited state shows the intended interface is administratively down.",
+      "citedEvidenceIds": ["<validated event or log id>"]
+    }
   },
   "labGroundTruth": {
     "rootCauseType": "interface_misconfiguration",
-    "rootCauseDevices": ["r2"]
+    "rootCauseDevices": ["r2"],
+    "expectedRemediationTool": "enable_interface"
   },
   "evaluation": {
     "typeMatch": true,
     "devicesMatch": true,
+    "remediationMatch": true,
     "overallMatch": true
   },
   "citedEvidence": {
@@ -305,22 +313,64 @@ deterministic root-cause mapper.
 The run is created as `status: running`, first in `collecting_evidence` and
 then `analyzing`, before the model responds. Those transitions let the NOC UI
 show the investigator working rather than only displaying a final answer.
-`completed` records the structured conclusion; `failed` records a safe error
-message. A missing/invalid key, timeout, rate limit, malformed output or
-Firestore failure is isolated to this service and cannot stop monitoring.
+`completed` records the structured conclusion and, when applicable, the
+post-conclusion lab evaluation; `failed` records a safe error message. A
+missing/invalid key, timeout, rate limit, malformed output or Firestore failure
+is isolated to this service and cannot stop monitoring.
 
 `evidenceRefs` means evidence included in the prompt. `citedEvidence` is the
 smaller subset the model used to support its conclusion. Every cited id is
 validated against the supplied evidence before a run can complete. The
 Lab ground truth stays in a separate server-only document while GPT is working
 and is never included in the prompt. After a cited conclusion is returned, the
-service publishes `typeMatch`, `devicesMatch` and `overallMatch`. The model
-cannot score its own answer. Runs without controller-created truth are
-explicitly unscored.
+service publishes `typeMatch`, `devicesMatch`, `remediationMatch` and
+`overallMatch`. The model cannot score its own answer. Runs without
+controller-created truth are explicitly unscored.
+
+An optional `remediationProposal` is inert typed data, not an execution
+request. The Network Controller revalidates it against the completed run and
+citations before persisting a separate `agentActions/` record; approval and
+execution are recorded in separate collections.
 
 The exact prompt, model, reasoning effort, response id, token breakdown,
 latency, pricing snapshot and cost estimate are retained so a run can be
 reproduced, measured and argued with. API response storage is disabled.
+
+## `labEvaluations/` — Increment 5 implemented
+
+The Lab Controller creates one evaluation record only after a named fault
+scenario completes successfully. Its `expected` outcome includes the expected
+root-cause type, device set, and repair tool. A singleton
+`labEvaluationState/current` pointer identifies the pending evaluation.
+Restore cancels an unclaimed pending evaluation; a later successful scenario
+supersedes an earlier pending one.
+
+```json
+{
+  "evaluationId": "LAB-...",
+  "actionId": "LAB-...",
+  "expected": {
+    "rootCauseType": "interface_misconfiguration",
+    "rootCauseDevices": ["r2"],
+    "expectedRemediationTool": "enable_interface"
+  },
+  "status": "pending",
+  "injectionRequestedAt": "<timestamp>",
+  "createdAt": "<server timestamp>",
+  "claimedAt": null,
+  "claimedByIncidentId": null
+}
+```
+
+The Agent Service atomically claims an eligible pending evaluation for one new
+settled incident run using only its opaque id. The expected outcome is never
+copied into an in-progress `agentRuns/` document or sent to GPT. After GPT
+returns a valid cited conclusion, the service loads the truth and stores it with
+cause/device/repair scores on the completed run; the evaluation remains
+`claimed` as an immutable record of that run's ground truth. `claimedByRunId`
+is added on claim. Direct-script and production-style runs without a
+controller-created evaluation remain unscored. This collection is backend-only
+and is not part of the dashboard's client-readable rules.
 
 ---
 

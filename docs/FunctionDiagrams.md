@@ -16,19 +16,20 @@ each component.
 | Containerlab + FRR network | Running lab infrastructure | Runs the simulated PC1—R1—R2—R3—PC2 network; FRR provides routing and emits router logs. | A safe, repeatable network to monitor and use for fault demonstrations. |
 | Health Service | Implemented backend service | Pings configured data-plane addresses, stores each check in `healthChecks/`, and emits `device_unreachable` / `device_recovered` events on reachability changes. | Answers “which devices can I reach, and when did that change?” |
 | Layer 0 | Implemented backend service | Tails FRR logs and probes selected router state; preserves raw evidence in `networkLogs/` and writes recognized fault/recovery transitions to `networkEvents/`. | Turns router messages and state observations into traceable, normalized evidence. |
-| Firestore Emulator | Local data store | Stores devices, health checks, raw logs, normalized events, incidents, agent runs, and lab actions; backend services write through the Admin SDK while the dashboard reads through the Firebase SDK. | The shared, live record of what the system observed and concluded. |
+| Firestore Emulator | Local data store | Stores observations, normalized events, incidents, agent runs, lab evaluations, action proposals, audits, network changes, and lab actions; backend services write through the Admin SDK while the dashboard reads through the Firebase SDK. | The shared, live record of what the system observed, concluded, proposed, and did. |
 | Incident Service | Implemented backend service | Consumes `networkEvents/`, correlates related symptoms, waits for evidence to settle, determines a reproducible root cause, tracks recovery, and writes `incidents/`. | Turns individual signals into an understandable incident with a diagnosis. |
-| Agent Service | Implemented, read-only backend service | Reads diagnosed incidents and linked event/log evidence, requests an independent structured investigation, validates citations, compares conclusions with the baseline, and writes lifecycle/results to `agentRuns/`. | Provides a second opinion with evidence and an auditable record; it cannot change the network. |
-| OpenAI Responses API (GPT-5.6 Luna) | External dependency used by Agent Service | Receives the investigation prompt and supplied evidence, then returns a structured conclusion; no tools or action capability are provided. | Supplies the AI investigation, while ACN retains control of evidence, validation, and recording. |
-| Angular NOC dashboard | Implemented operator-facing web app | Subscribes to recent Firestore data, renders topology, timeline, incidents, evidence, events and agent runs, and reports listener errors. All Firestore access from the browser is read-only. | Lets an operator follow the telemetry and investigation flow and inspect why ACN reached a conclusion. |
+| Agent Service | Implemented investigation service | Builds a neutral evidence prompt without deterministic diagnosis or lab truth, validates cited structured conclusions, scores controller-triggered runs against hidden lab truth after completion, and can emit one inert typed repair proposal. | Produces an evidence-based diagnosis and measurable lab evaluation without getting network execution authority. |
+| OpenAI Responses API (GPT-5.6 Luna) | External dependency used by Agent Service | Receives neutral observations and raw evidence and returns a structured conclusion with citations and an optional typed repair proposal; no tools or action capability are provided. | Supplies the investigation while ACN controls evidence projection, validation, evaluation, and recording. |
+| Network Controller | Implemented loopback-only remediation service | Revalidates completed runs and proposals, records decisions, requires human approval, invokes only fixed adapters, and waits for fresh observer evidence and incident resolution. | Provides a narrow, auditable repair path without exposing arbitrary commands or targets to the model. |
+| Angular NOC dashboard | Implemented operator-facing web app | Subscribes to recent Firestore data, renders topology, timeline, incidents, evidence, events, investigations, lab evaluations and remediation state. Browser Firestore access is read-only; decisions use loopback APIs. | Lets an operator inspect the evidence, compare GPT with hidden lab truth after completion, and approve or reject proposed repairs. |
 | Lab Controller | Implemented localhost-only control service | Accepts only named scenario IDs, maps them to repository-owned scripts, allows one action at a time, and records status/output in `labActions/`. | Provides fixed manual fault-injection and restore controls for the synthetic lab without granting the AI action authority. |
 | Lab scenario scripts | Implemented fixed action targets | Apply one of five named lab fault scenarios or restore the lab; scripts do not act as an open-ended command interface. | Make demonstrations repeatable and constrain what the manual controls can change. |
 | `start-all.sh` launcher | Optional operational helper | Builds/verifies the stack, starts the selected local processes, records logs, and owns cleanup of the processes it starts. | Starts and stops the local demo as one managed stack; it does not process network data itself. |
 
-The future general Network Controller, risk/approval workflow, user
-authentication, historical intelligence, and advanced monitoring integrations
-are not current active services. They are intentionally excluded from the table
-of implemented responsibilities.
+Production authentication and RBAC, historical intelligence, advanced
+monitoring integrations, distributed controller leadership, and automatic
+approval are not implemented. The current Network Controller is a fixed
+lab-bounded repair service, not a general-purpose network control plane.
 
 ## Layer 0
 
@@ -253,11 +254,12 @@ log-derived events onward to their raw `networkLogs/` evidence.
 
 ## Agent Service
 
-The Agent Service watches diagnosed incidents and performs an independent,
-read-only investigation. It loads the incident's normalized events and linked
-raw log evidence, asks the configured model for a structured diagnosis, checks
-the citations, compares the conclusion with the deterministic baseline, and
-records the run in `agentRuns/`.
+The Agent Service investigates settled incidents using neutral observations
+and linked raw evidence. It deliberately withholds the deterministic diagnosis,
+incident symptoms, cause-revealing event types, and lab ground truth from the
+model. After a valid cited conclusion is returned, controller-created lab truth
+can be loaded and scored; direct scenario runs remain unscored. The model may
+also return one inert typed repair proposal, but has no execution tools.
 
 ```mermaid
 flowchart TD
@@ -271,15 +273,15 @@ flowchart TD
   H["Claim run transactionally<br/>status=running<br/>stage=collecting_evidence"]
   I["Load eventIds from<br/>networkEvents/"]
   J["Follow sourceLogId references<br/>to raw networkLogs/"]
-  K["Build versioned prompt<br/>baseline + incident +<br/>normalized events + raw logs"]
+  K["Project neutral facts<br/>and raw logs;<br/>exclude diagnosis and lab truth"]
   L["Update run stage=analyzing<br/>save evidence refs and prompt"]
-  M["Call model via Responses API<br/>strict structured JSON<br/>no tools or action capability"]
+  M["Call model via Responses API<br/>strict structured JSON<br/>optional one typed proposal"]
   N{"Response valid and<br/>citations refer to supplied evidence?"}
-  O["Compute agree/disagree<br/>against deterministic baseline"]
-  P["Complete run with conclusion,<br/>citations, usage, latency and cost"]
+  O["Load associated hidden lab truth<br/>only after valid conclusion"]
+  P["Complete run with conclusion,<br/>evaluation if available, proposal,<br/>citations, usage and cost"]
   Q["Record run as failed<br/>with error and completion time"]
   R[("Firestore: agentRuns/<br/>lifecycle + investigation result")]
-  S["No remediation path:<br/>agent cannot change network"]
+  S["Optional inert proposal<br/>is separately revalidated<br/>by Network Controller"]
 
   A --> B --> C
   C -- "No" --> D
@@ -293,56 +295,64 @@ flowchart TD
 
 ### Input and evidence preparation
 
-The service watches incident documents as they are added or modified. It only
-accepts incidents with a supported deterministic root-cause record; an
-incident still marked as analyzing is not investigable. A hash of that
-diagnosis determines its version and run id. The id is claimed transactionally
-in `agentRuns/`, preventing duplicate calls if the listener replays the same
-incident or it changes without a new diagnosis version.
+The service watches settled incidents and creates a deterministic run identity
+from the evidence revision and prompt contract, not from the deterministic
+root-cause mapper. It transactionally claims the run and revalidates readiness
+before making the model call, so duplicate callbacks or concurrent service
+instances converge on one run.
 
-For a claimed run, the service loads each event id from `networkEvents/`, then
-follows each non-null `sourceLogId` to the original `networkLogs/` document.
-The prompt contains the deterministic baseline, incident summary, normalized
-events, and raw device logs. It tells the model to treat evidence as data, not
-instructions, and to cite only supplied event and log ids.
+For a claimed run, the service loads evidence and projects it into neutral
+observations with an allow-list of factual attributes, alongside raw device
+logs. The prompt excludes deterministic diagnosis, incident symptoms,
+scenario names, controller output, and cause-revealing event types. The model
+is instructed to treat evidence as data, not instructions, and cite only
+supplied evidence ids.
 
 ### Model investigation and validation
 
 The prompt is sent to the configured model through the OpenAI Responses API,
-requesting strict structured JSON and no tools. The model returns its own
-root-cause category, affected devices, summary, confidence, reasoning, and
-evidence citations. The service validates the response and verifies that every
-cited event or log id was actually supplied; missing or invented citations
-fail validation.
+requesting strict structured JSON and no tools. The model returns its own root-cause category, affected devices, summary,
+confidence, reasoning, evidence citations, and at most one optional repair
+proposal. The service validates the response and verifies that every cited
+event or log id was actually supplied; missing or invented citations fail
+validation.
 
-Agreement is calculated by the service, not trusted from model output: it
-compares the model's cause and devices with the deterministic baseline. A
-successful run records the conclusion, agreement, evidence citations, response
-metadata, token usage, latency, and estimated cost.
+After GPT returns a valid cited conclusion, the service loads any associated
+lab ground truth and independently scores cause, device-set, and repair-tool
+matches. Truth is not present in the prompt or an in-progress run. Without
+controller-created ground truth, the diagnosis remains valid and explicitly
+unscored. The run also records evidence citations, response metadata, token
+usage, latency, and estimated cost.
 
 ### Output, failures, and safety boundary
 
-The Agent Service writes only to `agentRuns/`. Each run records its lifecycle:
+The Agent Service writes investigation results to `agentRuns/` and atomically
+claims eligible `labEvaluations/` records while updating
+`labEvaluationState/current`; these records track hidden expected outcomes.
+Each run records its lifecycle:
 `collecting_evidence` → `analyzing` → `completed`, or `failed`. Evidence-loading,
 API, output-validation, and persistence errors are isolated to that
 investigation; when a run has been claimed, its failure is recorded rather than
-propagated into the Health, Layer 0, or Incident services.
+propagated into the Health, Layer 0, or Incident services. Expected outcomes
+are loaded only after the model returns a valid cited conclusion, then cause,
+device-set, and proposed-repair matches are scored.
 
-This investigator has no Docker, SSH, `vtysh`, controller, or action tools. It
-can analyze and report, but cannot remediate or otherwise change the network.
+This investigator has no Docker, SSH, `vtysh`, or controller execution tools.
+Its typed proposal is inert; only the Network Controller can execute an
+allow-listed repair after human approval.
 
 ## Angular dashboard
 
-The Angular NOC dashboard is a live viewer for the implemented telemetry and
-investigation flow plus manual controls for the synthetic lab. Its Firestore
-path is read-only; manual actions go through a separate localhost-only Lab
-Controller and are not exposed to the Agent Service.
+The Angular NOC dashboard is a live viewer for telemetry, investigations,
+lab evaluations, and guarded remediation. Browser Firestore access is
+read-only. Manual fault controls and repair approvals use separate localhost
+services with distinct authority.
 
 ```mermaid
 flowchart TD
   subgraph READ["A. Live, read-only dashboard data"]
-    A[("Firestore emulator<br/>devices, healthChecks,<br/>networkLogs, networkEvents,<br/>incidents, agentRuns, labActions")]
-    B["Seven onSnapshot listeners<br/>bounded recent slices for collection histories"]
+    A[("Firestore emulator<br/>telemetry, incidents, agentRuns,<br/>labEvaluations, agentActions,<br/>actionAuditEvents, networkChanges, labActions")]
+    B["Snapshot listeners<br/>bounded recent slices for collection histories"]
     C["Map Firestore documents<br/>to dashboard models and dates"]
     D["Store live collections<br/>in Angular signals"]
     E["Derive latest check per device<br/>and open-incident count"]
@@ -359,7 +369,7 @@ flowchart TD
     B -. "snapshot error" .-> J
   end
 
-  subgraph CONTROL["B. Manual lab controls — separate from the AI agent"]
+  subgraph CONTROL["B. Manual lab fault controls — separate from AI repair"]
     L["Operator selects one of<br/>five named fault scenarios or restore"]
     M{"Fault injection?"}
     N["Confirm before running<br/>a fault scenario"]
@@ -378,93 +388,116 @@ flowchart TD
 
   R -. "read-only snapshot listener" .-> B
   R -. "action history" .-> G
+
+  subgraph REPAIR["C. Guarded repair decision"]
+    T["Operator reviews typed proposal<br/>and evidence"]
+    U{"Approve or reject?"}
+    V["POST action id + approver<br/>to 127.0.0.1:8788"]
+    W["POST action id + approver + reason<br/>to 127.0.0.1:8788"]
+    X["Network Controller records<br/>decision and fixed execution lifecycle"]
+    Y[("agentActions/<br/>actionAuditEvents/<br/>networkChanges/")]
+    Z["Dashboard shows audit,<br/>verification and outcome"]
+    T --> U
+    U -- "Approve" --> V --> X
+    U -- "Reject" --> W --> X
+    X --> Y --> Z
+  end
+
+  AA[("Firestore: agentRuns/<br/>completed run + optional proposal")]
+  AB["Network Controller revalidates<br/>run and citations; persists action"]
+  AA --> AB --> T
+  Y -. "read-only snapshot listeners" .-> B
 ```
 
 The data service subscribes to `devices/`, plus recent ordered slices of
 `healthChecks/` (200), `networkEvents/` (200), `incidents/` (50),
-`agentRuns/` (50), `labActions/` (50), and `networkLogs/` (300). It maps
-documents into typed view models; the topology uses each device's latest
-health check, and incident details join in-window events to raw logs by
-`sourceLogId`. Older records outside a bounded slice may not appear in the
-timeline or an incident's evidence view.
+`agentRuns/` (50), `labActions/` (50), and `networkLogs/` (300). Action and
+audit views load their related records for the visible proposals. It maps
+documents into typed view models; the topology uses each device's latest health
+check, and incident details join in-window events to raw logs by `sourceLogId`.
+Older records outside a bounded slice may not appear in the timeline or an
+incident's evidence view.
 
 The operations timeline combines health checks, events, raw logs, incident
-updates, agent runs, and lab actions, orders them newest first, and supports
-all, problem, AI, and raw-log filters. The other panels show the topology,
-agent conclusions, incident diagnosis and evidence, and normalized event feed.
+updates, agent runs, lab actions, and action audit events, orders them newest
+first, and supports all, problem, AI, and raw-log filters. The other panels show
+the topology, GPT diagnosis and post-completion lab evaluation, incident
+evidence, normalized events, and repair state.
 
-For controls, fault scenarios require operator confirmation; restore starts
+For fault controls, scenarios require operator confirmation; restore starts
 directly. Requests contain a scenario id only—not a command, device, interface,
-or script path. The controller exposes fixed named actions on localhost,
+or script path. The Lab Controller exposes fixed named actions on localhost,
 rejects concurrent actions, and records output and lifecycle in `labActions/`.
-The browser reads that record like other dashboard data; it does not write
-Firestore. The controller is a manual demo boundary, not the future general
-Network Controller, and it gives the investigator no action capability.
+Repair decisions use the separate Network Controller API on port 8788. The
+browser sends an action id and operator identity (plus a reason when rejecting);
+the Network Controller enforces the fixed repair catalog and records
+`agentActions/`, `actionAuditEvents/`, and `networkChanges/`. It requires
+explicit human approval before mutation. The browser never writes Firestore,
+and the Agent Service never executes a repair.
 Firestore reads are open only for the local synthetic-data emulator; the
 current rules must not be deployed to a real project before authentication and
 per-user authorization exist.
 
-## Next planned stage: controlled network actions
+## Guarded remediation
 
-**Planned only — Increment 5 is not implemented, and the Network Controller
-directory is a placeholder.** The diagram below is a high-level target flow
-from the project specification, not a description of running code. The action
-contract and risk/approval boundary must be designed before this flow is
-connected to the Agent Service. The current Agent Service remains read-only.
+**Increment 6 is implemented; live-lab acceptance is still pending.** GPT's
+optional proposal is inert data. The Network Controller is the only component
+that can execute repairs, and only through a fixed tool catalog after explicit
+human approval.
 
 ```mermaid
 flowchart TD
-  A[("Current inputs:<br/>incidents/ + agentRuns/<br/>diagnosis and evidence")]
-  B["Future: propose a bounded action<br/>for a diagnosed incident"]
-  C["Describe target, expected effect,<br/>risk and verification plan"]
-  D[("Planned: agentActions/<br/>action proposal + lifecycle")]
-  E["Future risk and authorization policy<br/>(Increment 6 boundary)"]
-  F{"Policy permits action?"}
-  G["Update proposal as rejected/held"]
-  H{"Operator approval required?"}
-  I["Wait for authorized approval"]
-  J{"Approved?"}
-  K["Update proposal as rejected/expired"]
-  L["Controlled Network Controller<br/>validate action contract and target"]
-  M{"Request valid and allowed?"}
-  N["Reject request;<br/>record reason on proposal"]
-  O["Apply bounded action"]
-  P["Observe network and verify<br/>expected effect"]
-  Q{"Successful?"}
-  R["Record success;<br/>close action lifecycle"]
-  S["Rollback if available and verify;<br/>otherwise escalate"]
-  T[("Planned: networkChanges/<br/>before/after + result + audit")]
-  U(["Stop: no network change"])
+  A[("Firestore: completed agentRuns/<br/>optional typed proposal + cited evidence")]
+  B["Proposal watcher validates<br/>completed run and citations"]
+  C["Create deterministic action id<br/>and one proposal audit transactionally"]
+  D[("agentActions/<br/>proposed or escalated")]
+  E{"Safe action available?"}
+  F["Record escalation;<br/>no mutation"]
+  G["Operator approves or rejects<br/>through loopback API"]
+  H[("actionAuditEvents/<br/>durable human decision")]
+  I{"Approved?"}
+  J["Rejected;<br/>no network change"]
+  K["Preflight validates incident<br/>and fixed target state"]
+  L{"Preflight passes?"}
+  M["Fail and escalate;<br/>no repair command"]
+  N["Execute one fixed code-owned<br/>argv adapter; no shell"]
+  O[("networkChanges/<br/>bounded before/after + transport")]
+  P["Wait for fresh tool-specific<br/>observer recovery and incident resolution"]
+  Q{"Independently verified?"}
+  R["Mark succeeded"]
+  S["Mark failed and escalate"]
+  T[("actionAuditEvents/<br/>all lifecycle transitions")]
 
-  A -. "future connection only" .-> B
-  B --> C --> D --> E --> F
-  F -- "No" --> G --> U
-  F -- "Yes" --> H
-  H -- "Yes" --> I --> J
-  J -- "No" --> K --> U
-  J -- "Yes" --> L
-  H -- "No" --> L
-  L --> M
-  M -- "No" --> N --> U
-  M -- "Yes" --> O --> P --> Q
+  A --> B --> C --> D --> E
+  E -- "No safe tool" --> F --> T
+  E -- "Mutating repair" --> G --> H --> I
+  I -- "No" --> J --> T
+  I -- "Yes" --> K --> L
+  L -- "No" --> M --> T
+  L -- "Yes" --> N --> O --> P --> Q
   Q -- "Yes" --> R --> T
   Q -- "No" --> S --> T
 ```
 
-At a high level, a future proposal would be bounded and explain its target,
-expected effect, risk, and verification plan. A separate policy boundary must
-decide whether the action is permitted and whether an authorized operator must
-approve it. Only then could a Network Controller validate and apply the
-approved action. ACN would observe the result and record success, rollback, or
-escalation for audit. Rejected, held, or invalid requests would be recorded
-without changing the network.
+The initial catalog contains five fixed mutating repairs and a no-safe-action
+escalation. Proposal identity is deterministic and replay-safe. The repository
+revalidates the completed run and cited conclusion before creating
+`agentActions/`; action transitions and append-only audit events are written
+transactionally. Approvals are exact loopback API requests, and the browser
+does not write Firestore.
 
-The planned data model names `agentActions/` for proposals and
-`networkChanges/` for execution results. Their exact schemas, risk levels,
-authorization rules, action catalog, verification and rollback behavior are
-not yet implemented; the diagram intentionally does not define those details.
-The manual Lab Controller remains a separate, local demo tool and is not this
-future action path.
+Every mutation maps to a reviewed, shell-free argument list and a code-owned
+target. Preflight rejects a resolved incident or unexpected target state.
+Transport completion alone never means success: ACN requires fresh
+tool-specific observer recovery evidence and the linked incident to resolve.
+Actions interrupted during execution are escalated rather than blindly
+re-executed; verification can resume after a restart. The Lab Controller
+remains separate and only injects or restores the synthetic faults.
+
+See [Increment 5](./increment-5-plan.md) for evidence isolation and hidden
+ground-truth evaluation, and [Increment 6](./increment-6-plan.md) for the
+allow-listed repair catalog, state machine, audit model, and acceptance
+criteria.
 
 ## Implementation references
 
@@ -496,6 +529,12 @@ future action path.
 - Agent prompt and model client:
   [`services/agent-service/src/investigation/prompt.ts`](../services/agent-service/src/investigation/prompt.ts),
   [`services/agent-service/src/openai/client.ts`](../services/agent-service/src/openai/client.ts)
+- Network Controller proposal watcher, approval lifecycle and fixed repair
+  catalog:
+  [`services/network-controller/src/proposal-watcher.ts`](../services/network-controller/src/proposal-watcher.ts),
+  [`services/network-controller/src/action-service.ts`](../services/network-controller/src/action-service.ts),
+  [`services/network-controller/src/tool-catalog.ts`](../services/network-controller/src/tool-catalog.ts),
+  [`services/network-controller/src/enable-interface-executor.ts`](../services/network-controller/src/enable-interface-executor.ts)
 - Angular dashboard data and manual lab controls:
   [`apps/web/src/app/data.service.ts`](../apps/web/src/app/data.service.ts),
   [`apps/web/src/app/components/operations-console.component.ts`](../apps/web/src/app/components/operations-console.component.ts),

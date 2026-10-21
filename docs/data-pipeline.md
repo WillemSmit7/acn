@@ -3,9 +3,9 @@
 This guide follows ACN's telemetry and investigation data pipeline: how
 observations of the network move from source through ingestion, storage, and
 processing to the services and operators that consume them. It is distinct
-from the network data plane, which is the routed path ACN monitors. The current
-pipeline is observability and investigation only: the AI agent does not make
-network changes.
+from the network data plane, which is the routed path ACN monitors. GPT
+investigates and may produce an inert typed repair proposal; actual repair is a
+separate guarded control flow that requires human approval.
 
 ## ACN telemetry and investigation pipeline
 
@@ -18,8 +18,11 @@ flowchart LR
   Events[("networkEvents/<br/>state transitions")]
   Process["Incident Service<br/>correlate, diagnose, track recovery"]
   Incidents[("incidents/<br/>current incident state")]
-  Agent["Agent Service<br/>load evidence, investigate"]
-  Runs[("agentRuns/<br/>lifecycle + conclusion")]
+  Agent["Agent Service<br/>neutral evidence + investigation"]
+  Runs[("agentRuns/<br/>conclusion + optional proposal")]
+  Evaluate[("labEvaluations/<br/>hidden lab truth")]
+  Controller["Network Controller<br/>approval + fixed repair"]
+  Actions[("agentActions/<br/>actionAuditEvents/<br/>networkChanges/")]
   Serve["Serving<br/>read-only NOC dashboard"]
 
   Sources --> Ingest
@@ -32,11 +35,16 @@ flowchart LR
   Events -.->|"eventIds"| Agent
   Raw -.->|"sourceLogId"| Agent
   Agent --> Runs
+  Evaluate -.->|"claim at run start; reveal after valid response"| Agent
+  Runs -.->|"optional inert proposal"| Controller
+  Controller --> Actions
   Checks --> Serve
   Raw --> Serve
   Events --> Serve
   Incidents --> Serve
   Runs --> Serve
+  Evaluate --> Serve
+  Actions --> Serve
 ```
 
 ## 1. Source: where observations originate
@@ -97,7 +105,11 @@ SDK; the dashboard uses read-only access.
 | `networkEvents/` | Health Service and Layer 0 | Recognized state transitions from either source |
 | `incidents/` | Incident Service | Current lifecycle and diagnosis for a correlated fault, updated in place |
 | `agentRuns/` | Agent Service | One investigation lifecycle and result per deterministic diagnosis version |
+| `labEvaluations/` | Lab Controller and Agent Service | Opaque expected lab outcome, atomically associated with one run and revealed/scored only after a valid conclusion |
 | `labActions/` | Lab Controller | Operator-triggered scenario status and recent script output |
+| `agentActions/` | Agent Service and Network Controller | Inert typed repair proposal and its guarded lifecycle |
+| `actionAuditEvents/` | Network Controller | Append-only proposal, approval, execution, and verification transitions |
+| `networkChanges/` | Network Controller | Bounded before/after state, transport result, and observer-backed verification |
 
 `networkLogs/` retains the original text in `raw`. Parsed fields are stored
 alongside it when available, with `parsed` and `normalized` flags showing how
@@ -140,32 +152,48 @@ trail.
 
 ### AI investigation
 
-The Agent Service watches settled incidents. For a new diagnosis version it:
+The Agent Service watches settled incident evidence revisions. For a new
+revision and prompt contract it:
 
 1. Claims a deterministic run id to avoid duplicate investigations on listener
    replays or service restarts.
 2. Loads the incident's `eventIds` and follows each `sourceLogId` to raw logs.
-3. Records evidence and prompt details, then sends the evidence to the
-   configured model through the OpenAI Responses API.
-4. Validates cited event and log ids, compares its conclusion with the
-   deterministic root cause, and stores lifecycle, citations, usage, latency,
-   and estimated cost in `agentRuns/`.
+3. Projects neutral facts and raw logs into a prompt; it excludes deterministic
+   diagnosis, incident symptoms, cause-revealing event names, scenario labels,
+   and controller output.
+4. Sends the evidence to the configured model through the OpenAI Responses API
+   and validates the structured conclusion and every cited evidence id.
+5. Only after committing a valid cited conclusion, loads any associated
+   controller-created lab ground truth and scores cause/device matches. Runs
+   without lab truth remain explicitly unscored.
+6. Persists lifecycle, conclusion, optional inert repair proposal, evaluation,
+   citations, usage, latency, and estimated cost in `agentRuns/`.
 
-The Agent Service has no Docker, SSH, `vtysh`, or network-action capability.
-Its investigation does not change the network.
+The Agent Service has no Docker, SSH, `vtysh`, or controller execution
+capability. A typed proposal is not authority to change the network.
 
 ## 5. Serving: who reads the data
 
 The Angular NOC dashboard subscribes to the emulator's Firestore data and
-combines recent checks, logs, events, incidents, agent runs, and lab actions
-into the operator timeline. It is a viewer: browser Firestore writes are
-denied.
+combines recent checks, logs, events, incidents, agent runs, lab evaluations,
+action audits, network changes, and lab actions into the operator view. Browser
+Firestore writes are denied; approval decisions are sent to the
+localhost-only Network Controller.
 
 Manual fault buttons use a separate path. The browser sends one of a fixed set
 of named requests to the localhost-only Lab Controller. The controller runs
 the corresponding repository-owned scenario script and writes its lifecycle
-and output to `labActions/`. This is an operator demo control, not an AI
-remediation interface.
+and output to `labActions/`. This is an operator demo control, separate from AI remediation.
+
+For guarded repairs, the Network Controller watches completed agent runs,
+revalidates proposals and cited evidence, and stores a deterministic
+`agentActions/` record. Every mutating action requires explicit human approval.
+It uses only a fixed catalog and code-owned, shell-free arguments; preflight
+checks the incident and target state. `networkChanges/` records bounded
+execution details, and an action succeeds only after fresh observer recovery
+evidence and incident resolution. Every lifecycle transition is recorded in
+`actionAuditEvents/`. The controller binds to loopback port 8788; it is not the
+Lab Controller and it is not a general network command interface.
 
 ## Example: R2-R3 link failure
 
@@ -178,13 +206,16 @@ remediation interface.
 3. The Incident Service sees both device symptoms and router-side events,
    correlates them, and writes a link diagnosis with evidence and predicted
    impact to `incidents/`.
-4. The Agent Service loads that diagnosis plus linked events and raw logs,
-   investigates independently, and records its conclusion and citations in
-   `agentRuns/`.
-5. The dashboard displays the checks, evidence, events, incident, and
-   investigation. An operator may separately ask the Lab Controller to restore
-   the synthetic fault; recovery observations then flow through collection
-   and processing again.
+4. The Agent Service builds a neutral evidence prompt from observations and
+   raw logs, excluding the deterministic diagnosis and lab truth. It records
+   its independently cited conclusion in `agentRuns/`; controller-triggered
+   runs are scored against hidden ground truth only afterward.
+5. If GPT returns a typed repair proposal, it remains inert until revalidated
+   and approved by a human through the Network Controller. A fixed adapter runs
+   and the observer verifies recovery before success is recorded.
+6. The dashboard shows the incident, evidence, GPT evaluation, repair proposal,
+   human decision, audit trail, and result. Fault injection/restoration remains
+   a separate Lab Controller operation.
 
 ## Boundaries to keep in mind
 
@@ -192,6 +223,7 @@ remediation interface.
   layers of data; a later layer does not replace its evidence.
 - Layer 0 emits events but does not decide what constitutes an incident.
 - Incident diagnosis is deterministic and does not depend on the AI result.
-- The AI investigates and records; it does not remediate.
+- The AI investigates and can propose; only the separately guarded Network
+  Controller can execute a human-approved, allow-listed repair.
 - The local Lab Controller is separate from the telemetry and investigation
   pipeline and is restricted to fixed manual scenarios.

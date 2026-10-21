@@ -29,5 +29,7 @@ npm run lab-controller   # http://127.0.0.1:8787
 ```
 
 This is a manual, synthetic-lab demonstration harness. It is separate from the
-GPT Agent Service and does not give Luna an action tool. It is not the planned
-Increment 5 Network Controller or the Increment 6 approval policy.
+GPT Agent Service and does not give Luna an action tool. It is also separate
+from the implemented Increment 6 Network Controller: the Lab Controller
+injects and restores named faults, while the Network Controller executes only
+approved, fixed repairs.

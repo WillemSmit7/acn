@@ -1,8 +1,8 @@
 # ACN — AI-Centered Network
 
 A testable network-operations environment where network data is collected,
-normalized, stored and — in later increments — reasoned about and acted on by
-an AI agent.
+normalized and stored, investigated by an AI agent, and repaired only through
+a guarded controller after human approval.
 
 **Current status: Increments 1–5 complete; Increment 6 guarded remediation is implemented and awaiting live-lab acceptance.**
 See [PROGRESS.md](PROGRESS.md).
@@ -17,9 +17,10 @@ network -> health/log collection -> normalized events -> incidents
 
 GPT has no command or network capability. It emits one typed proposal as inert
 data. The localhost Network Controller validates the completed run and
-citations, a named human approves, and only a code-owned adapter can run. The
-Each of the five mutating adapters has one fixed lab target; success requires
-fresh autonomous recovery evidence and a resolved incident.
+citations, a named human approves, and only a code-owned adapter can run. Each
+of the five mutating adapters has one fixed lab target; success requires fresh
+autonomous recovery evidence and a resolved incident. Live-lab acceptance for
+guarded remediation is still pending; see [PROGRESS.md](PROGRESS.md).
 
 ---
 
@@ -142,8 +143,11 @@ npm run agent-service
 ```
 
 Reads each settled incident and its raw evidence, asks `gpt-5.6-luna` for an
-independent structured diagnosis, and writes the run to `agentRuns/`. It never
-remediates or changes the network.
+independent structured diagnosis, and writes the run to `agentRuns/`. For
+controlled lab runs, it also claims an opaque hidden-evaluation record and
+scores the returned diagnosis and repair proposal only after citation
+validation. The proposal is inert: this service never remediates or changes the
+network.
 
 **Terminal 7 — local lab controller**
 
@@ -292,8 +296,8 @@ verified without a model call:
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run test:e2e:evaluation-boundary
 ```
 
-For Increment 4, this creates both real incidents and has GPT-5.6 Luna
-investigate them. It is verified against the real lab and live API:
+For live GPT investigation, this creates incidents from real lab scenarios and
+has GPT-5.6 Luna investigate them:
 
 ```bash
 OPENAI_API_KEY=... ./scripts/e2e-agent.sh
@@ -434,13 +438,13 @@ acn/
 │   ├── health-service/      Increment 1 — ICMP checks -> Firestore
 │   ├── layer-zero/          Increment 2 — FRR logs -> networkLogs + networkEvents
 │   ├── incident-service/    Increment 3 — networkEvents -> incidents
-│   ├── agent-service/       Increment 4 — GPT read-only investigation -> agentRuns
+│   ├── agent-service/       Increments 4-5 — GPT diagnosis/evaluation + inert repair proposals
 │   ├── lab-controller/      Local manual demo controls -> labActions
 │   └── network-controller/  Increment 6 — guarded proposals, approval and fixed repair
 ├── apps/web/                Angular NOC dashboard — live telemetry/investigation + lab controls
 ├── firebase/                Firestore rules and indexes
 ├── scripts/                 end-to-end test and helpers
-└── docs/                    architecture, data model, incident model
+└── docs/                    architecture, data models, developer and increment guides
 ```
 
 ---
@@ -453,5 +457,7 @@ acn/
 - [docs/data-pipeline.md](docs/data-pipeline.md) — ACN's telemetry and investigation
   data pipeline, from source to serving
 - [docs/FunctionDiagrams.md](docs/FunctionDiagrams.md) — component responsibilities and diagrams of implemented and planned system flows
+- [docs/increment-5-plan.md](docs/increment-5-plan.md) — evidence-first GPT evaluation boundary
+- [docs/increment-6-plan.md](docs/increment-6-plan.md) — guarded remediation design and safety boundary
 - [docs/data-model.md](docs/data-model.md) — Firestore collections
 - [docs/incident-model.md](docs/incident-model.md) — correlation and root-cause rules

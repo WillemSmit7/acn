@@ -18,9 +18,11 @@ different things; use “data plane” for network forwarding and “pipeline”
 
 Before making changes, read [PROGRESS.md](../PROGRESS.md). It is the authoritative
 record of what is implemented, what is next, and environment-specific traps.
-In particular, do not treat the planned Network Controller flow as running
-code: the current Agent Service is read-only, and the Lab Controller is a
-separate manual tool for the synthetic lab.
+Increments 1–5 are complete; Increment 6 guarded remediation is implemented,
+with live-lab acceptance still pending. The Agent Service can return an inert
+typed repair proposal but cannot change the network. Only the separate Network
+Controller can execute a fixed repair after explicit human approval. The Lab
+Controller remains a separate fault-injection tool.
 
 The [architecture guide](./architecture.md) describes system boundaries,
 [FunctionDiagrams.md](./FunctionDiagrams.md) describes component responsibilities
@@ -105,6 +107,11 @@ sets the emulator host and project id for its child processes.
 | Agent Service | `OPENAI_MAX_OUTPUT_TOKENS` | `4096` | Maximum model output size. |
 | Lab Controller | `LAB_CONTROLLER_HOST` | `127.0.0.1` | Bind address; keep the controller localhost-only. |
 | Lab Controller | `LAB_CONTROLLER_PORT` | `8787` | Local HTTP port. |
+| Network Controller | `NETWORK_CONTROLLER_HOST` | `127.0.0.1` | Must remain loopback (`127.0.0.1` or `localhost`). |
+| Network Controller | `NETWORK_CONTROLLER_PORT` | `8788` | Local approval API port. |
+| Network Controller | `NETWORK_ACTION_TIMEOUT_MS` | `10000` | Timeout for a fixed network action. |
+| Network Controller | `NETWORK_VERIFY_TIMEOUT_MS` | `45000` | Maximum wait for independent recovery verification. |
+| Network Controller | `NETWORK_VERIFY_POLL_MS` | `1000` | Interval between recovery checks. |
 | `start-all.sh` | `ACN_SKIP_AGENT` | `0` | Set to `1` to run without the Agent Service or API key. |
 | `start-all.sh` | `ACN_SKIP_LAB` | `0` | Set to `1` to skip lab verification/deployment. |
 | `start-all.sh` | `ACN_SKIP_BUILD` | `0` | Set to `1` to use existing `dist/` builds. |
@@ -124,9 +131,10 @@ developer-relevant.
 | Device reachability, check classification, or transition behavior | `services/health-service/src/` | Tests are in `services/health-service/tests/`; see [data pipeline](./data-pipeline.md). |
 | FRR parsing, event rules, log collection, or router-state observation | `services/layer-zero/src/` | [Layer 0 README](../services/layer-zero/README.md) |
 | Event grouping, recovery, settle timing, or root-cause diagnosis | `services/incident-service/src/` | [incident model](./incident-model.md) |
-| Evidence loading, prompt, structured output, or investigation lifecycle | `services/agent-service/src/` | [Agent Service README](../services/agent-service/README.md) |
+| GPT evidence projection, prompt, evaluation, or typed proposal | `services/agent-service/src/` | [Agent Service README](../services/agent-service/README.md), [Increment 5 plan](./increment-5-plan.md) |
+| Proposal validation, approval, fixed repairs, or verification | `services/network-controller/src/` | [Network Controller README](../services/network-controller/README.md), [Increment 6 plan](./increment-6-plan.md) |
 | Fixed manual lab actions or their audit lifecycle | `services/lab-controller/src/` and `lab/scenarios/` | [Lab Controller README](../services/lab-controller/README.md) |
-| Dashboard data, presentation, or manual controls | `apps/web/src/app/` | [web README](../apps/web/README.md) |
+| Dashboard data, presentation, manual controls, or repair approvals | `apps/web/src/app/` | [web README](../apps/web/README.md) |
 | Firestore record shape or query indexes | `docs/data-model.md`, `firebase/firestore.indexes.json`, and affected writers/readers | [data model](./data-model.md) |
 
 Backend workspaces use TypeScript with strict checks, `noUncheckedIndexedAccess`,
@@ -168,15 +176,40 @@ the lab and is not a unit-test substitute.
 ### Change Agent Service behavior
 
 Update the focused tests under `services/agent-service/tests/` along with
-changes to evidence loading, prompt/schema validation, citations, or run
-lifecycle. Keep the agent structurally read-only: it must not receive Docker,
-SSH, `vtysh`, Lab Controller, or network-action capability. Never put its API
-key in the web app.
+changes to neutral evidence projection, prompt/schema validation, citations,
+ground-truth evaluation, or run lifecycle. Keep lab ground truth out of the
+prompt and unavailable on an in-progress run; reveal and score it only after
+GPT returns a valid, cited conclusion. Production-style runs without lab truth
+must remain explicitly unscored.
+
+The Agent Service has no Docker, SSH, `vtysh`, or controller execution tool.
+Its optional typed repair proposal is inert data; it does not grant authority
+to change the network. Keep API credentials server-side. See the
+[Increment 5 plan](./increment-5-plan.md) for the trust boundary and exit
+criteria.
 
 `./scripts/e2e-agent.sh` exercises live investigations and calls the paid
 OpenAI API. Run it only when that external call is intended and a valid key is
-configured. Most development should use unit tests or
+configured. It first runs live incident scenarios, which reset emulator data
+and alter the lab. Most development should use unit tests or
 `ACN_SKIP_AGENT=1 npm run start:all`.
+
+### Change guarded remediation
+
+Update Network Controller tests when changing proposal validation, idempotency,
+action transitions, audit writes, approval API validation, fixed tool
+definitions, adapter preconditions, or recovery verification. Keep the allow
+list closed: no model- or request-controlled command, executable, target,
+interface, or process arguments. Every mutating adapter must require durable
+human approval and fresh observer-backed recovery plus incident resolution
+before it reports success.
+
+Keep the Lab Controller fault-injection path separate from the Network
+Controller repair path. Run focused Network Controller tests first; use
+`npm run test:e2e:guarded-remediation` only when you intend to reset emulator
+data and inject/repair faults in the live lab. It uses deterministic completed
+run fixtures and does not require paid model calls. See the
+[Increment 6 plan](./increment-6-plan.md).
 
 ### Change the dashboard or manual lab controls
 
@@ -228,22 +261,30 @@ commands only when their lab/emulator effects are acceptable:
 | Health Service | `npm test --workspace services/health-service` | `./scripts/e2e-test.sh` | E2E needs Docker, a healthy lab, and Firestore emulator; it clears emulator data and breaks/restores the R2–R3 link. |
 | Layer 0 collection/normalization | `npm test --workspace services/layer-zero` | `./scripts/e2e-layer-zero.sh` | E2E needs Docker, lab, and emulator; it clears emulator data and breaks/restores the link. |
 | Incident correlation/diagnosis | `npm test --workspace services/incident-service` | `npm run test:e2e:failure-categories` for fast fixture coverage; `./scripts/e2e-incidents.sh` for live scenarios | Fixture E2E builds the relevant backend workspaces and uses no lab, emulator, or model API. Live E2E needs Docker, lab, and emulator; it clears emulator data and runs five lab fault/restore cycles. |
-| Agent investigation | `npm test --workspace services/agent-service` | `./scripts/e2e-agent.sh` | Paid/live verification needs a valid `OPENAI_API_KEY`, Docker, lab, and emulator. It invokes the incident E2E first (clearing emulator data and running lab scenarios), then makes model calls. |
+| Agent investigation/evaluation | `npm test --workspace services/agent-service` | `npm run test:e2e:evaluation-boundary`; `./scripts/e2e-agent.sh` for live GPT | Evaluation-boundary E2E needs the Firestore emulator and writes isolated fixture records; no lab or API call. Live GPT E2E needs a valid `OPENAI_API_KEY`, Docker, lab, and emulator; it runs incident scenarios first (clearing emulator data and changing the lab), then makes paid model calls. |
 | Lab Controller | `npm test --workspace services/lab-controller` | Exercise named controls in the running local stack | Live controls change the synthetic lab and write action records to emulator `labActions/`. |
+| Network Controller / guarded repairs | `npm test --workspace services/network-controller` | `npm run test:e2e:guarded-remediation` | E2E needs Docker, lab, and emulator; it resets emulator data, injects and repairs all five faults, and uses deterministic run fixtures without paid model calls. |
 | Angular dashboard | `npm run test --workspace web` | `npm run build --workspace web`; inspect in the running stack for behavior changes | Angular tests use the configured Karma/browser runner; live dashboard data requires the emulator and backend stack. |
 | Cross-workspace TypeScript | — | `npm run build` | Compiles all configured workspaces; no lab or emulator required. |
 
-The root `npm test` command runs backend unit tests; it does **not** run the
-Angular tests, so run the web command separately when relevant. The
-failure-category fixture test is available as
-`npm run test:e2e:failure-categories`; it builds its backend dependencies and
-does not call the model API.
+The root `npm test` command runs unit tests for the six backend workspaces; it
+does **not** run the Angular tests, so run the web command separately when
+relevant. The fixture workflows are:
 
-The live end-to-end scripts reset Firestore emulator data and alter the lab.
-Stop other ACN services that may write to the same emulator before running
-them. Read the script prerequisites and [PROGRESS.md](../PROGRESS.md) before
-starting; do not point them at production Firebase or infrastructure/data you
-need to preserve.
+- `npm run test:e2e:failure-categories` — builds relevant workspaces and checks
+  autonomous observations, neutral prompt projection, diagnosis, and proposal
+  agreement without the live lab, emulator, or model API.
+- `npm run test:e2e:evaluation-boundary` — uses the Firestore emulator to check
+  hidden-ground-truth claiming and reveal behavior; it does not call the model.
+- `npm run test:e2e:guarded-remediation` — runs all five approved repair
+  scenarios against the lab with deterministic fixture runs; it does not call
+  the model but does mutate the lab and reset emulator state.
+
+The destructive live-lab scripts reset Firestore emulator data and alter the
+lab. Stop other ACN services that may write to the same emulator before
+running them. Read the script prerequisites and [PROGRESS.md](../PROGRESS.md)
+before starting; do not point them at production Firebase or
+infrastructure/data you need to preserve.
 
 If changing one service's persisted fields or behavior, run its focused tests
 first, then the build; run an end-to-end scenario when the change crosses
@@ -291,7 +332,14 @@ the emulator's data.
   reset it. The e2e scripts intentionally clear emulator state before running.
 - **If the dashboard or controller port is unavailable**, check the launcher
   output and logs. The dashboard can select a free port starting at 4200;
-  the Lab Controller uses 8787 and must remain bound to `127.0.0.1`.
+  the Lab Controller uses 8787 and the Network Controller uses 8788; both must
+  remain bound to loopback.
+- **If a repair proposal does not appear or execute**, check that the Agent
+  Service completed its run with a valid cited proposal, then inspect the
+  Network Controller log and `agentActions/` state/audit records. A proposal
+  is inert until a human approves it; a rejected preflight or missing fresh
+  recovery evidence must not be treated as success. Live-lab acceptance is
+  still pending in the current status record.
 - **Docker access can be stale in an existing shell.** After adding a user to
   the Docker group, start a new login session and verify group access before
   running lab tools. Do not assume a running process inherited newly granted
@@ -305,14 +353,16 @@ the emulator's data.
 - [PROGRESS.md](../PROGRESS.md) — current implementation status, next increment,
   verified results, and environment traps.
 - [FunctionDiagrams.md](./FunctionDiagrams.md) — component responsibilities,
-  implemented service flows, dashboard flow, planned action boundary, and code
-  references.
+  implemented service flows, dashboard flow, evaluation and guarded-repair
+  boundaries, and code references.
 - [architecture.md](./architecture.md) and [data-pipeline.md](./data-pipeline.md) —
   architecture decisions and end-to-end data movement.
 - [data-model.md](./data-model.md) and [incident-model.md](./incident-model.md) —
   Firestore shapes and incident semantics.
-- Component READMEs — local behavior and component-specific operation notes.
+- Component READMEs and [Increment 5](./increment-5-plan.md) /
+  [Increment 6](./increment-6-plan.md) plans — local behavior, trust
+  boundaries, and action lifecycle details.
 
 When behavior changes, update the directly related tests and documentation in
-the same change. Keep planned increments clearly labeled as planned; do not
-document them as implemented before they exist.
+the same change. Keep remaining work and acceptance status aligned with
+[PROGRESS.md](../PROGRESS.md).

@@ -1,15 +1,22 @@
-# GPT read-only investigation agent
+# GPT evidence investigator
 
-Increment 5 investigates `incidents/` with GPT-5.6 Luna. It
-reads the incident, every referenced `networkEvents/` document and the original
+Increments 4–5 investigate `incidents/` with GPT-5.6 Luna. The service reads the
+incident, every referenced `networkEvents/` document and the original
 `networkLogs/` lines behind log-derived events, then records a reproducible run
 in `agentRuns/`. A prompt-only projection removes the deterministic diagnosis,
 incident symptoms and cause-revealing event names. GPT sees neutral facts and
-raw device evidence, then lab-only ground truth is loaded and scored after the
-model has committed its conclusion.
+raw device evidence; lab-only ground truth is loaded and scored only after the
+model returns a valid cited conclusion.
+
+For a controller-triggered evaluation, the service atomically claims at most
+one pending record by its opaque id. Expected values are not copied into the
+running agent record or prompt; after response validation, the service scores
+cause type, device set and proposed repair tool on the completed run.
 
 The service is deliberately read-only with respect to the network. It has no
-Docker, SSH, `vtysh`, controller or remediation capability.
+Docker, SSH, `vtysh`, controller or remediation capability. Its typed repair
+proposal is inert data; the separate Network Controller validates the completed
+run and citations, then requires a human approval before a fixed repair can run.
 
 ## Model contract
 
