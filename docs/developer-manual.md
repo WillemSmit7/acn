@@ -37,6 +37,16 @@ The supported development environment is Ubuntu with Node.js 20+, npm, Java
 prerequisites and initial setup in the [root README](../README.md), then install
 workspace dependencies with `npm install`.
 
+If `lab/install-prereqs.sh` adds your user to the Docker group, that change does
+not update permissions in terminals or services that were already running.
+Start a fresh login session (close and reopen the terminal, or restart VS Code
+if it launched the terminal) before running lab commands. On the documented
+host, `newgrp` and `sg` are unavailable; do not rely on them to refresh group
+membership. Confirm that `id -nG "$USER"` and `id -nG` both include `docker`.
+The lab scripts use `lab/lib/docker.sh` to detect stale membership and report
+it explicitly. See [PROGRESS.md](../PROGRESS.md) for the host-specific recovery
+details.
+
 Copy the relevant service `.env.example` files to `.env` before starting
 individual services. Keep real credentials out of source control. The
 `OPENAI_API_KEY` belongs only in `services/agent-service/.env` or the shell

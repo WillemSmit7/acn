@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install Docker Engine and Containerlab on Ubuntu.
-# Requires sudo. Run once, then log out and back in (for the docker group).
+# Requires sudo. After installation, start a fresh login session for docker-group access.
 set -euo pipefail
 
 echo "==> Installing Docker Engine"
@@ -45,9 +45,13 @@ if ! docker info >/dev/null 2>&1; then
     IMPORTANT: your current shell cannot reach Docker yet, because its
     docker-group membership was granted after the shell started. Activate it:
 
-        newgrp docker
+        Start a fresh login session by closing and reopening your terminal,
+        or restart VS Code if it launched this shell. Then verify with:
 
-    (or log out and back in for a permanent fix), then continue.
+        id -nG "$USER"
+        id -nG
+
+    Both group lists must include "docker" before continuing.
 MSG
 fi
 echo "==> Next: ./lab/deploy.sh"

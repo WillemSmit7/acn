@@ -554,6 +554,11 @@ has no connection to it.
 
 ## Known gaps and follow-ups
 
+- **Docker group membership can be stale in existing processes.** After
+  `install-prereqs.sh` adds the user to `docker`, start a fresh login session;
+  on this host neither `newgrp` nor `sg` is installed. Compare `id -nG "$USER"`
+  with `id -nG` and make sure both include `docker` before running lab commands.
+  The shared resolver in `lab/lib/docker.sh` detects this case.
 - **The lab does not survive a host reboot.** Containers restart, but the
   containerlab veth pairs and the host routes do not. FRR keeps its config, so
   the symptom is misleading: routers look healthy but OSPF has zero neighbours

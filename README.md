@@ -33,18 +33,16 @@ guarded remediation is still pending; see [PROGRESS.md](PROGRESS.md).
 - Docker Engine and Containerlab — install with:
 
 ```bash
-./lab/install-prereqs.sh     # needs sudo; log out and back in afterwards
+./lab/install-prereqs.sh     # needs sudo; start a fresh login session afterwards
 ```
 
-Docker group membership does **not** apply to the shell you ran the installer
-from. Activate it without logging out:
-
-```bash
-newgrp docker
-```
-
-Check it worked with `id` — you should see `docker` in the group list. Every
-lab script verifies Docker access up front and tells you this if it is missing.
+Docker group membership does **not** apply to the shell or processes that were
+already running when the installer added it. Start a fresh login session
+(close and reopen the terminal, or restart VS Code if it launched the terminal).
+On the documented host, `newgrp` and `sg` are unavailable, so do not use them
+to refresh membership. Verify both `id -nG "$USER"` and `id -nG` include
+`docker` before running lab commands. The lab scripts detect stale membership
+and report it explicitly.
 
 ---
 
